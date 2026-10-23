@@ -6,7 +6,7 @@
 // @author       You
 // @match        https://www.torn.com/imarket.php*
 // @grant        none
-// ====/UserScript==
+// ==/UserScript==
 
 (function() {
     'use strict';
