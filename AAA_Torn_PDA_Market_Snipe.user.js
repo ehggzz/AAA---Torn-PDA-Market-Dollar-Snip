@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.0.1
+// @version      5.4
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -14,11 +14,10 @@
     'use strict';
 
     const STORAGE_KEY = 'aaa_market_shortcuts_v4';
+    const POSITION_KEY = 'aaa_market_shortcuts_position_v1';
     const BUILT_IN_ITEMS = [
-        { id: 6, name: 'Beer' },
-        { id: 19, name: 'Cigar' },
-        { id: 206, name: 'Xanax' },
-        { id: 5, name: 'Bottle of Water' }
+        { id: '180', name: 'Bottle of Beer' },
+        { id: '206', name: 'Xanax' }
     ];
 
     const styles = {
@@ -34,14 +33,33 @@
         input: 'width:100%;box-sizing:border-box;padding:8px;background:#111;color:#fff;border:1px solid #555;border-radius:5px;font-size:13px;'
     };
 
+    function normaliseItem(item) {
+        return {
+            id: String(item.id || '').trim(),
+            name: String(item.name || '').trim() || ('Item ' + String(item.id || '').trim()),
+            favorite: Boolean(item.favorite)
+        };
+    }
+
     function readItems() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-            if (Array.isArray(saved) && saved.length) return saved;
+            if (Array.isArray(saved) && saved.length) {
+                const repaired = saved.map(normaliseItem);
+                // Older versions accidentally used ID 6 for Beer. Repair that saved shortcut.
+                repaired.forEach(item => {
+                    if (item.id === '6' && /beer/i.test(item.name)) {
+                        item.id = '180';
+                        item.name = 'Bottle of Beer';
+                    }
+                });
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(repaired));
+                return repaired;
+            }
         } catch (e) {
             console.warn('[AAA Market Favourites] Could not read saved items.', e);
         }
-        return BUILT_IN_ITEMS.map(item => ({ ...item, id: String(item.id), favorite: false }));
+        return BUILT_IN_ITEMS.map(normaliseItem);
     }
 
     let items = readItems();
@@ -55,6 +73,10 @@
         }
     }
 
+    function decode(value) {
+        try { return decodeURIComponent(String(value).replace(/\+/g, ' ')); } catch (_) { return String(value); }
+    }
+
     function marketUrl(item) {
         const params = new URLSearchParams();
         params.set('itemID', String(item.id).trim());
@@ -64,6 +86,61 @@
 
     function goToItem(item) {
         window.location.href = marketUrl(item);
+    }
+
+    function findItemIdInUrl(text) {
+        const match = String(text || '').match(/[?&#]itemID(?:=|%3D)(\d+)/i) || String(text || '').match(/itemID=(\d+)/i);
+        return match ? match[1] : null;
+    }
+
+    function findItemNameInUrl(text) {
+        const match = String(text || '').match(/itemName=([^&#]+)/i);
+        return match ? decode(match[1]) : '';
+    }
+
+    function nameNear(element) {
+        let node = element;
+        for (let i = 0; i < 7 && node; i++, node = node.parentElement) {
+            const heading = node.querySelector('h1,h2,h3,h4,.title,.item-name,[class*="item-name"],[class*="itemName"]');
+            if (heading && heading.textContent.trim()) return heading.textContent.trim();
+        }
+        return '';
+    }
+
+    function getCurrentMarketItem() {
+        const urlText = window.location.href + ' ' + window.location.hash + ' ' + window.location.search;
+        let id = findItemIdInUrl(urlText);
+        let name = findItemNameInUrl(urlText);
+
+        if (id) {
+            const builtIn = BUILT_IN_ITEMS.find(item => String(item.id) === String(id));
+            return { id: String(id), name: name || (builtIn ? builtIn.name : ('Item ' + id)) };
+        }
+
+        const candidates = [];
+        const selectors = [
+            'a[href*="itemID="]',
+            '[data-item-id]', '[data-itemid]', '[itemid]', '[data-item]',
+            'img[src*="/images/items/"]', 'img[src*="/items/"]'
+        ];
+
+        selectors.forEach(selector => {
+            document.querySelectorAll(selector).forEach(element => {
+                const text = element.getAttribute('href') || element.getAttribute('data-item-id') || element.getAttribute('data-itemid') || element.getAttribute('itemid') || element.getAttribute('data-item') || element.getAttribute('src') || '';
+                const foundId = findItemIdInUrl(text) || (String(text).match(/(?:^|\/)items?\/(\d+)(?:\D|$)/i) || [])[1];
+                if (!foundId) return;
+                const foundName = findItemNameInUrl(text) || nameNear(element) || '';
+                const marketArea = element.closest('.item-market-wrap,.item-market,.market-wrap,[class*="item-market"],[class*="itemMarket"]');
+                candidates.push({ id: String(foundId), name: foundName, priority: marketArea ? 0 : 1 });
+            });
+        });
+
+        candidates.sort((a, b) => a.priority - b.priority);
+        if (!candidates.length) return null;
+
+        const best = candidates[0];
+        const builtIn = BUILT_IN_ITEMS.find(item => String(item.id) === best.id);
+        return { id: best.id, name: best.name || (builtIn ? builtIn.name : ('Item ' + best.id)) };
     }
 
     function createToolbar() {
@@ -77,7 +154,7 @@
         box.style.width = 'auto';
         box.style.maxHeight = 'none';
         box.innerHTML = `
-            <header id="aaa-mf-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#2b2b36;border-radius:9px 9px 0 0;border-bottom:1px solid #444;font-weight:700;touch-action:pan-y;">
+            <header id="aaa-mf-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#2b2b36;border-radius:9px 9px 0 0;border-bottom:1px solid #444;font-weight:700;">
                 <span id="aaa-mf-title" style="display:none;">⭐ AAA Market Favourites</span>
                 <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;">⭐</button>
             </header>
@@ -85,11 +162,13 @@
                 <input id="aaa-mf-search" type="search" placeholder="Search saved items…" aria-label="Search saved items" style="${styles.input}margin-bottom:8px;">
                 <div id="aaa-mf-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;"></div>
                 <div style="border-top:1px solid #444;padding-top:10px;">
-                    <div style="font-weight:700;margin-bottom:7px;">Add an item</div>
+                    <div style="font-weight:700;margin-bottom:7px;">Quick add</div>
+                    <div id="aaa-mf-current" style="font-size:11px;color:#aaa;line-height:1.4;margin-bottom:7px;">Checking the current Item Market page…</div>
+                    <button id="aaa-mf-add-current" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;margin-bottom:8px;">+ Add current item</button>
+                    <div style="font-size:11px;color:#777;text-align:center;margin:2px 0 8px;">— or add manually —</div>
                     <input id="aaa-mf-name" type="text" placeholder="Item name (e.g. Xanax)" style="${styles.input}margin-bottom:6px;">
                     <input id="aaa-mf-id" type="number" inputmode="numeric" placeholder="Torn item ID" style="${styles.input}margin-bottom:6px;">
-                    <button id="aaa-mf-add" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;">+ Add item</button>
-                    <div style="font-size:11px;color:#aaa;line-height:1.4;margin-top:7px;">Tip: enter the item's exact Torn ID so the shortcut opens the right market search.</div>
+                    <button id="aaa-mf-add" type="button" style="width:100%;background:#444;color:#fff;border:1px solid #666;border-radius:6px;padding:8px;font-weight:700;font-size:12px;">+ Add manually</button>
                 </div>
             </div>`;
 
@@ -98,6 +177,8 @@
         const body = box.querySelector('#aaa-mf-body');
         const collapse = box.querySelector('#aaa-mf-collapse');
         const title = box.querySelector('#aaa-mf-title');
+        const currentLabel = box.querySelector('#aaa-mf-current');
+        const currentButton = box.querySelector('#aaa-mf-add-current');
 
         function setCollapsed(value) {
             collapsed = value;
@@ -113,16 +194,16 @@
         }
         setCollapsed(true);
 
-        let dragState = null;
-        let suppressNextClick = false;
         try {
-            const savedPosition = JSON.parse(localStorage.getItem('aaa_market_shortcuts_position_v1') || 'null');
+            const savedPosition = JSON.parse(localStorage.getItem(POSITION_KEY) || 'null');
             if (savedPosition && Number.isFinite(savedPosition.left) && Number.isFinite(savedPosition.top)) {
                 box.style.left = Math.max(0, savedPosition.left) + 'px';
                 box.style.top = Math.max(0, savedPosition.top) + 'px';
             }
         } catch (_) {}
 
+        let dragState = null;
+        let suppressNextClick = false;
         collapse.style.touchAction = 'none';
         collapse.style.cursor = 'grab';
         collapse.addEventListener('pointerdown', event => {
@@ -152,7 +233,7 @@
             if (wasDragged) {
                 try {
                     const rect = box.getBoundingClientRect();
-                    localStorage.setItem('aaa_market_shortcuts_position_v1', JSON.stringify({ left: rect.left, top: rect.top }));
+                    localStorage.setItem(POSITION_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
                 } catch (_) {}
                 setTimeout(() => { suppressNextClick = false; }, 0);
             }
@@ -167,6 +248,31 @@
                 return;
             }
             setCollapsed(!collapsed);
+        });
+
+        function refreshCurrentItem() {
+            const current = getCurrentMarketItem();
+            if (!current) {
+                currentLabel.textContent = 'Open an item-specific Item Market page, then try again.';
+                currentButton.disabled = true;
+                currentButton.style.opacity = '0.5';
+                return null;
+            }
+            const already = items.some(item => String(item.id) === String(current.id));
+            currentLabel.textContent = current.name + ' · ID ' + current.id + (already ? ' · Already saved' : '');
+            currentButton.disabled = already;
+            currentButton.style.opacity = already ? '0.5' : '1';
+            return current;
+        }
+
+        currentButton.addEventListener('click', () => {
+            const current = refreshCurrentItem();
+            if (!current) return;
+            if (items.some(item => String(item.id) === String(current.id))) return;
+            items.push({ id: current.id, name: current.name, favorite: false });
+            saveItems();
+            renderItems();
+            refreshCurrentItem();
         });
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
@@ -188,9 +294,11 @@
             nameInput.value = '';
             idInput.value = '';
             renderItems();
+            refreshCurrentItem();
         });
 
         renderItems();
+        refreshCurrentItem();
     }
 
     function renderItems() {
@@ -256,16 +364,29 @@
     function start() {
         createToolbar();
         const observer = new MutationObserver(() => {
-            if (!document.getElementById('aaa-market-favourites') && document.documentElement) {
-                createToolbar();
-            }
+            if (!document.getElementById('aaa-market-favourites') && document.documentElement) createToolbar();
         });
         if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
+        window.addEventListener('hashchange', () => {
+            const box = document.getElementById('aaa-market-favourites');
+            if (!box) return;
+            const current = getCurrentMarketItem();
+            const label = box.querySelector('#aaa-mf-current');
+            const button = box.querySelector('#aaa-mf-add-current');
+            if (!label || !button) return;
+            if (!current) {
+                label.textContent = 'Open an item-specific Item Market page, then try again.';
+                button.disabled = true;
+                button.style.opacity = '0.5';
+            } else {
+                const already = items.some(item => String(item.id) === String(current.id));
+                label.textContent = current.name + ' · ID ' + current.id + (already ? ' · Already saved' : '');
+                button.disabled = already;
+                button.style.opacity = already ? '0.5' : '1';
+            }
+        });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', start, { once: true });
-    } else {
-        start();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
 })();
