@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.4
+// @version      4.5
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -267,11 +267,41 @@
         });
     }
 
+    function showStartupError(error) {
+        try {
+            let marker = document.getElementById('aaa-mf-debug');
+            if (!marker) {
+                marker = document.createElement('div');
+                marker.id = 'aaa-mf-debug';
+                marker.style.cssText = 'position:fixed!important;top:8px!important;left:8px!important;z-index:2147483647!important;background:#7f1d1d!important;color:#fff!important;padding:10px!important;border:2px solid #ff7777!important;border-radius:8px!important;font:14px sans-serif!important;max-width:90vw!important;';
+                (document.body || document.documentElement).appendChild(marker);
+            }
+            marker.textContent = 'AAA Favourites v4.5 error: ' + (error && error.message ? error.message : String(error));
+        } catch (_) {}
+        console.error('[AAA Market Favourites] Startup error:', error);
+    }
+
     function ensureToolbar() {
-        if (!document.getElementById('aaa-market-favourites')) createToolbar();
+        try {
+            if (!document.getElementById('aaa-market-favourites')) createToolbar();
+            const box = document.getElementById('aaa-market-favourites');
+            if (box) {
+                box.style.setProperty('display', 'block', 'important');
+                box.style.setProperty('visibility', 'visible', 'important');
+                box.style.setProperty('opacity', '1', 'important');
+                box.style.setProperty('pointer-events', 'auto', 'important');
+                box.style.setProperty('position', 'fixed', 'important');
+                box.style.setProperty('top', '70px', 'important');
+                box.style.setProperty('left', '10px', 'important');
+                box.style.setProperty('z-index', '2147483647', 'important');
+            }
+        } catch (error) {
+            showStartupError(error);
+        }
     }
 
     function start() {
+        try {
         ensureToolbar();
 
         // Torn is a single-page app and may replace large parts of its DOM.
@@ -284,6 +314,9 @@
         window.addEventListener('hashchange', ensureToolbar);
         window.addEventListener('popstate', ensureToolbar);
         window.setInterval(ensureToolbar, 2000);
+        } catch (error) {
+            showStartupError(error);
+        }
     }
 
     if (document.readyState === 'loading') {
