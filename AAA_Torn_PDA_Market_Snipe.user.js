@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.9
+// @version      5.0
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -120,7 +120,72 @@
         }
 
         setCollapsed(true);
-        collapse.addEventListener('click', () => setCollapsed(!collapsed));
+
+        // Drag the floating launcher by its star button; save its position locally.
+        let dragState = null;
+        let suppressNextClick = false;
+        try {
+            const savedPosition = JSON.parse(localStorage.getItem('aaa_market_shortcuts_position_v1') || 'null');
+            if (savedPosition && Number.isFinite(savedPosition.left) && Number.isFinite(savedPosition.top)) {
+                box.style.left = Math.max(0, savedPosition.left) + 'px';
+                box.style.top = Math.max(0, savedPosition.top) + 'px';
+            }
+        } catch (_) {}
+
+        collapse.style.touchAction = 'none';
+        collapse.style.cursor = 'grab';
+        collapse.addEventListener('pointerdown', event => {
+            if (event.button !== undefined && event.button !== 0) return;
+            const rect = box.getBoundingClientRect();
+            dragState = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                left: rect.left,
+                top: rect.top,
+                moved: false
+            };
+            try { collapse.setPointerCapture(event.pointerId); } catch (_) {}
+        });
+        collapse.addEventListener('pointermove', event => {
+            if (!dragState || dragState.pointerId !== event.pointerId) return;
+            const dx = event.clientX - dragState.startX;
+            const dy = event.clientY - dragState.startY;
+            if (!dragState.moved && Math.abs(dx) + Math.abs(dy) < 7) return;
+            dragState.moved = true;
+            suppressNextClick = true;
+            const maxLeft = Math.max(0, window.innerWidth - box.offsetWidth);
+            const maxTop = Math.max(0, window.innerHeight - collapse.offsetHeight);
+            const left = Math.min(maxLeft, Math.max(0, dragState.left + dx));
+            const top = Math.min(maxTop, Math.max(0, dragState.top + dy));
+            box.style.left = left + 'px';
+            box.style.top = top + 'px';
+            box.style.right = 'auto';
+            box.style.bottom = 'auto';
+        });
+        function finishDrag(event) {
+            if (!dragState || (event && dragState.pointerId !== event.pointerId)) return;
+            const wasDragged = dragState.moved;
+            dragState = null;
+            if (wasDragged) {
+                try {
+                    const rect = box.getBoundingClientRect();
+                    localStorage.setItem('aaa_market_shortcuts_position_v1', JSON.stringify({ left: rect.left, top: rect.top }));
+                } catch (_) {}
+                setTimeout(() => { suppressNextClick = false; }, 0);
+            }
+        }
+        collapse.addEventListener('pointerup', finishDrag);
+        collapse.addEventListener('pointercancel', finishDrag);
+        collapse.addEventListener('click', event => {
+            if (suppressNextClick) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                suppressNextClick = false;
+                return;
+            }
+            setCollapsed(!collapsed);
+        });
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
         box.querySelector('#aaa-mf-add').addEventListener('click', () => {
