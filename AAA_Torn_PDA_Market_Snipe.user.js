@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.1
+// @version      5.2
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -72,16 +72,16 @@
     }
 
     function getCurrentMarketItem() {
-        // Torn's Item Market stores selected-item details in the URL/hash on many views.
+        // Read item details from Torn's current URL/hash when available.
         const href = window.location.href;
-        const idMatch = href.match(/[?&#]itemID=(\\d+)/i);
+        const idMatch = href.match(/[?&#]itemID=(\d+)/i);
         const nameMatch = href.match(/[?&#]itemName=([^&#]*)/i);
         if (!idMatch || !nameMatch) return null;
         let name = nameMatch[1];
-        try { name = decodeURIComponent(name.replace(/\\+/g, ' ')); } catch (_) {}
+        try { name = decodeURIComponent(name.replace(/\+/g, ' ')); } catch (_) {}
         name = name.trim();
         const id = idMatch[1];
-        if (!name || !/^\\d+$/.test(id)) return null;
+        if (!name || !/^\d+$/.test(id)) return null;
         return { id, name };
     }
 
@@ -104,9 +104,9 @@
             <div id="aaa-mf-body" style="padding:10px;">
                 <input id="aaa-mf-search" type="search" placeholder="Search saved items…" aria-label="Search saved items" style="${styles.input}margin-bottom:8px;">
                 <div id="aaa-mf-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;"></div>
-                <div id="aaa-mf-current-item" style="display:none;border-top:1px solid #444;padding-top:10px;margin-bottom:10px;">
-                    <div style="font-weight:700;margin-bottom:5px;">Viewing an item?</div>
-                    <div id="aaa-mf-current-label" style="font-size:12px;color:#ddd;margin-bottom:7px;overflow-wrap:anywhere;"></div>
+                <div id="aaa-mf-current-item" style="border-top:1px solid #444;padding-top:10px;margin-bottom:10px;">
+                    <div style="font-weight:700;margin-bottom:5px;">Quick-add current item</div>
+                    <div id="aaa-mf-current-label" style="font-size:12px;color:#ddd;margin-bottom:7px;overflow-wrap:anywhere;">Open a specific item page in the Item Market to check whether it can be recognised automatically.</div>
                     <button id="aaa-mf-current-add" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;">+ Add this item</button>
                 </div>
                 <div style="border-top:1px solid #444;padding-top:10px;">
@@ -214,7 +214,11 @@
         function refreshCurrentItem() {
             detectedItem = getCurrentMarketItem();
             if (!detectedItem) {
-                currentPanel.style.display = 'none';
+                currentPanel.style.display = 'block';
+                currentLabel.textContent = 'No item detected on this page yet. Try an item-specific market page; manual entry is still available below.';
+                currentAdd.textContent = 'No item detected';
+                currentAdd.disabled = true;
+                currentAdd.style.opacity = '0.65';
                 return;
             }
             currentPanel.style.display = 'block';
