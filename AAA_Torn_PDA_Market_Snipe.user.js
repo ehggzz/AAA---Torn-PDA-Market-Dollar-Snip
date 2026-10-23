@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         AAA - Torn PDA Market & Dollar Snipe
 // @namespace    http://tampermonkey.net/
-// @version      3.1
+// @version      3.2
 // @description  PDA Mobile: Minimised compact pill, item autocomplete, $1 sale detector, and auto-reset offscreen menu.
 // @author       You
-// @match        https://www.torn.com/imarket.php*
+// @match        *://*.torn.com/*
+// @match        *://torn.com/*
 // @grant        none
 // ==/UserScript==
+
 
 (function() {
     'use strict';
