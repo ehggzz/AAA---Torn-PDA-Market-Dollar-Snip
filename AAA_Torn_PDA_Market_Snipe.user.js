@@ -14,17 +14,11 @@
     'use strict';
 
     const STORAGE_KEY = 'aaa_market_shortcuts_v4';
-    const OLD_STORAGE_KEY = 'aaa_npc_targets';
     const BUILT_IN_ITEMS = [
         { id: 6, name: 'Beer' },
         { id: 19, name: 'Cigar' },
         { id: 206, name: 'Xanax' },
-        { id: 366, name: 'X-Mass Cupcake' },
-        { id: 367, name: 'Fruitcake' },
-        { id: 226, name: 'Bottle of Beer' },
-        { id: 330, name: 'Energy Drink' },
-        { id: 5, name: 'Bottle of Water' },
-        { id: 29, name: 'First Aid Kit' }
+        { id: 5, name: 'Bottle of Water' }
     ];
 
     const styles = {
@@ -48,21 +42,8 @@
             console.warn('[AAA Market Favourites] Could not read saved items.', e);
         }
 
-        // Migrate the old saved targets if present; otherwise start with a small starter list.
-        try {
-            const old = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY));
-            if (old && typeof old === 'object') {
-                const migrated = Object.entries(old).map(([id, item]) => ({
-                    id: String(id),
-                    name: String(item.name || ('Item ' + id)),
-                    favorite: false
-                }));
-                if (migrated.length) {
-                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated)); } catch (e) {}
-                    return migrated;
-                }
-            }
-        } catch (e) {}
+        // Start with known item IDs rather than carrying over old target IDs,
+        // which were originally used by the price-scanning version.
 
         return BUILT_IN_ITEMS.map(item => ({ ...item, id: String(item.id), favorite: false }));
     }
