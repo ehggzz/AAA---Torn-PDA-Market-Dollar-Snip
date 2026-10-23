@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AAA - Torn PDA Market & Dollar Snipe
 // @namespace    http://tampermonkey.net/
-// @version      3.5
-// @description  PDA Mobile: robust toolbox visibility test, item autocomplete, and $1 sale detector.
+// @version      3.6
+// @description  PDA Mobile: user-controlled toolbox, item targets, and manual market navigation.
 // @author       You
 // @match        *://*.torn.com/*
 // @match        *://torn.com/*
@@ -358,8 +358,6 @@
 
         const currentID = getCurrentItemID();
         const listings = document.querySelectorAll('.item-market-wrap .shop-market-list > li');
-        let foundDollarSale = false;
-
         listings.forEach(row => {
             const priceElem = row.querySelector('.price');
             if (!priceElem) return;
@@ -368,18 +366,9 @@
             const price = parseInt(priceText, 10);
             if (!Number.isFinite(price) || price <= 0) return;
 
+            // Special $1 sale detection/highlighting is disabled pending Torn staff guidance.
             if (price === 1) {
-                foundDollarSale = true;
-                row.style.backgroundColor = 'rgba(241,196,15,0.45)';
-                row.style.border = '2px solid #f1c40f';
-
-                if (!row.querySelector('.aaa-dollar-tag')) {
-                    const tag = document.createElement('div');
-                    tag.className = 'aaa-dollar-tag';
-                    tag.style.cssText = 'color:#f1c40f; font-weight:bold; font-size:11px; margin-top:2px;';
-                    tag.textContent = '🚨 $1 DOLLAR SALE!';
-                    priceElem.appendChild(tag);
-                }
+                return;
             } else if (targetItems[currentID]) {
                 const npcValue = targetItems[currentID].npcPrice;
                 if (price < npcValue) {
@@ -398,9 +387,6 @@
             }
         });
 
-        if (foundDollarSale && navigator.vibrate) {
-            navigator.vibrate([100, 50, 100]);
-        }
     }
 
     function ensureToolbar() {
