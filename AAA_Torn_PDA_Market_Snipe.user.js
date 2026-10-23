@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AAA - Torn PDA Market & Dollar Snipe
 // @namespace    http://tampermonkey.net/
-// @version      3.6
-// @description  PDA Mobile: user-controlled toolbox, item targets, and manual market navigation.
+// @version      3.7
+// @description  PDA Mobile: toolbox and manual item navigation; price scanning and highlighting disabled.
 // @author       You
 // @match        *://*.torn.com/*
 // @match        *://torn.com/*
@@ -353,40 +353,10 @@
         document.addEventListener('touchend', stopDrag);
     }
 
+    // Market price scanning and all price-based highlighting are disabled
+    // pending confirmation from Torn staff about permitted use of market data.
     function scanListings() {
-        if (!isMarketPage()) return;
-
-        const currentID = getCurrentItemID();
-        const listings = document.querySelectorAll('.item-market-wrap .shop-market-list > li');
-        listings.forEach(row => {
-            const priceElem = row.querySelector('.price');
-            if (!priceElem) return;
-
-            const priceText = priceElem.textContent.replace(/[^0-9]/g, '');
-            const price = parseInt(priceText, 10);
-            if (!Number.isFinite(price) || price <= 0) return;
-
-            // Special $1 sale detection/highlighting is disabled pending Torn staff guidance.
-            if (price === 1) {
-                return;
-            } else if (targetItems[currentID]) {
-                const npcValue = targetItems[currentID].npcPrice;
-                if (price < npcValue) {
-                    const profit = npcValue - price;
-                    row.style.backgroundColor = 'rgba(46,204,113,0.35)';
-                    row.style.border = '1px solid #2ecc71';
-
-                    if (!row.querySelector('.aaa-profit-tag')) {
-                        const tag = document.createElement('div');
-                        tag.className = 'aaa-profit-tag';
-                        tag.style.cssText = 'color:#2ecc71; font-weight:bold; font-size:11px; margin-top:2px;';
-                        tag.textContent = `+${profit.toLocaleString()} NPC Profit`;
-                        priceElem.appendChild(tag);
-                    }
-                }
-            }
-        });
-
+        return;
     }
 
     function ensureToolbar() {
