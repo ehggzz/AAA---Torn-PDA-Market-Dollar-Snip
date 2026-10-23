@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.3
+// @version      4.4
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -88,7 +88,7 @@
         box.innerHTML = `
             <header id="aaa-mf-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#2b2b36;border-radius:9px 9px 0 0;border-bottom:1px solid #444;font-weight:700;touch-action:pan-y;">
                 <span id="aaa-mf-title" style="display:none;">⭐ AAA Market Favourites</span>
-                <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;">⭐</button>
+                <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;font-size:18px;">🥚</button>
             </header>
             <div id="aaa-mf-body" style="padding:10px;">
                 <input id="aaa-mf-search" type="search" placeholder="Search saved items…" aria-label="Search saved items" style="${styles.input}margin-bottom:8px;">
@@ -116,7 +116,7 @@
             collapsed = value;
             body.style.display = collapsed ? 'none' : 'block';
             title.style.display = collapsed ? 'none' : 'inline';
-            collapse.textContent = collapsed ? '⭐' : '−';
+            collapse.textContent = collapsed ? '🥚' : '−';
             collapse.title = collapsed ? 'Open favourites' : 'Minimise favourites';
             collapse.setAttribute('aria-label', collapse.title);
             box.style.width = collapsed ? 'auto' : '290px';
