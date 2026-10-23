@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.2
+// @version      4.3
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -76,7 +76,7 @@
 
     function createToolbar() {
         if (document.getElementById('aaa-market-favourites')) return;
-        const root = document.documentElement || document.body;
+        const root = document.body || document.documentElement;
         if (!root) return;
 
         const box = document.createElement('section');
@@ -267,15 +267,23 @@
         });
     }
 
+    function ensureToolbar() {
+        if (!document.getElementById('aaa-market-favourites')) createToolbar();
+    }
+
     function start() {
-        createToolbar();
-        // Re-add if Torn replaces its page content during navigation.
-        const observer = new MutationObserver(() => {
-            if (!document.getElementById('aaa-market-favourites') && document.documentElement) {
-                createToolbar();
-            }
-        });
-        if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
+        ensureToolbar();
+
+        // Torn is a single-page app and may replace large parts of its DOM.
+        // Watch the document itself and also retry periodically in case the
+        // app replaces the observed root or removes the toolbar during a render.
+        const observer = new MutationObserver(() => ensureToolbar());
+        observer.observe(document, { childList: true, subtree: true });
+
+        window.addEventListener('load', ensureToolbar);
+        window.addEventListener('hashchange', ensureToolbar);
+        window.addEventListener('popstate', ensureToolbar);
+        window.setInterval(ensureToolbar, 2000);
     }
 
     if (document.readyState === 'loading') {
