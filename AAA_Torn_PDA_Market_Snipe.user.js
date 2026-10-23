@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.7
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -15,13 +15,10 @@
 
     const STORAGE_KEY = 'aaa_market_shortcuts_v4';
     const BUILT_IN_ITEMS = [
-        { id: 180, name: 'Beer' }, { id: 181, name: 'Cigar' }, { id: 206, name: 'Xanax' },
-        { id: 226, name: 'Bottle of Beer' }, { id: 366, name: 'X-Mass Cupcake' },
-        { id: 367, name: 'Fruitcake' }, { id: 5, name: 'Bottle of Water' },
-        { id: 182, name: 'Cannabis' }, { id: 183, name: 'Ecstasy' }, { id: 184, name: 'Ketamine' },
-        { id: 185, name: 'LSD' }, { id: 186, name: 'Opium' }, { id: 187, name: 'PCP' },
-        { id: 188, name: 'Shrooms' }, { id: 189, name: 'Speed' }, { id: 190, name: 'Vicodin' },
-        { id: 17, name: 'Blank CD' }, { id: 18, name: 'DVD' }, { id: 19, name: 'Brick' }
+        { id: 6, name: 'Beer' },
+        { id: 19, name: 'Cigar' },
+        { id: 206, name: 'Xanax' },
+        { id: 5, name: 'Bottle of Water' }
     ];
 
     const styles = {
@@ -75,10 +72,8 @@
     }
 
     function createToolbar() {
-        const existing = document.getElementById('aaa-market-favourites');
-        if (existing && existing.isConnected && existing.querySelector('#aaa-mf-collapse')) return;
-        if (existing) existing.remove();
-        const root = document.body || document.documentElement;
+        if (document.getElementById('aaa-market-favourites')) return;
+        const root = document.documentElement || document.body;
         if (!root) return;
 
         const box = document.createElement('section');
@@ -90,17 +85,13 @@
         box.innerHTML = `
             <header id="aaa-mf-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#2b2b36;border-radius:9px 9px 0 0;border-bottom:1px solid #444;font-weight:700;touch-action:pan-y;">
                 <span id="aaa-mf-title" style="display:none;">⭐ AAA Market Favourites</span>
-                <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;font-size:18px;">🥚</button>
+                <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;">⭐</button>
             </header>
             <div id="aaa-mf-body" style="padding:10px;">
                 <input id="aaa-mf-search" type="search" placeholder="Search saved items…" aria-label="Search saved items" style="${styles.input}margin-bottom:8px;">
                 <div id="aaa-mf-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;"></div>
                 <div style="border-top:1px solid #444;padding-top:10px;">
                     <div style="font-weight:700;margin-bottom:7px;">Add an item</div>
-                    <input id="aaa-mf-catalog-search" type="search" placeholder="Find an item by name…" aria-label="Find an item by name" style="${styles.input}margin-bottom:6px;">
-                    <div id="aaa-mf-catalog-results" style="display:none;max-height:150px;overflow:auto;margin-bottom:8px;"></div>
-                    <button id="aaa-mf-add-current" type="button" style="width:100%;${styles.button}margin-bottom:8px;">＋ Add item from current market page</button>
-                    <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Or enter details manually:</div>
                     <input id="aaa-mf-name" type="text" placeholder="Item name (e.g. Xanax)" style="${styles.input}margin-bottom:6px;">
                     <input id="aaa-mf-id" type="number" inputmode="numeric" placeholder="Torn item ID" style="${styles.input}margin-bottom:6px;">
                     <button id="aaa-mf-add" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;">+ Add item</button>
@@ -118,7 +109,7 @@
             collapsed = value;
             body.style.display = collapsed ? 'none' : 'block';
             title.style.display = collapsed ? 'none' : 'inline';
-            collapse.textContent = collapsed ? '🥚' : '−';
+            collapse.textContent = collapsed ? '⭐' : '−';
             collapse.title = collapsed ? 'Open favourites' : 'Minimise favourites';
             collapse.setAttribute('aria-label', collapse.title);
             box.style.width = collapsed ? 'auto' : '290px';
@@ -132,46 +123,6 @@
         collapse.addEventListener('click', () => setCollapsed(!collapsed));
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
-
-        const catalogSearch = box.querySelector('#aaa-mf-catalog-search');
-        const catalogResults = box.querySelector('#aaa-mf-catalog-results');
-        catalogSearch.addEventListener('input', () => {
-            const query = catalogSearch.value.trim().toLowerCase();
-            catalogResults.innerHTML = '';
-            if (!query) { catalogResults.style.display = 'none'; return; }
-            const matches = BUILT_IN_ITEMS.filter(item =>
-                item.name.toLowerCase().includes(query) || String(item.id).includes(query)
-            );
-            if (!matches.length) {
-                const empty = document.createElement('div');
-                empty.textContent = 'Not in the quick list. Open its market search and use the button below.';
-                empty.style.cssText = 'color:#aaa;padding:7px;font-size:11px;';
-                catalogResults.appendChild(empty);
-            } else {
-                matches.forEach(item => {
-                    const add = document.createElement('button');
-                    add.type = 'button';
-                    add.textContent = item.name + ' (ID ' + item.id + ')  ＋';
-                    add.style.cssText = styles.button + 'display:block;width:100%;text-align:left;margin-bottom:4px;';
-                    add.addEventListener('click', () => addItem(item.name, String(item.id), catalogSearch, catalogResults));
-                    catalogResults.appendChild(add);
-                });
-            }
-            catalogResults.style.display = 'block';
-        });
-
-        box.querySelector('#aaa-mf-add-current').addEventListener('click', () => {
-            const hash = window.location.hash || '';
-            const params = new URLSearchParams(hash.replace(/^#\\/?/, ''));
-            const id = params.get('itemID');
-            const name = params.get('itemName');
-            if (!id || !/^\\d+$/.test(id) || !name) {
-                alert('Open an item-specific Item Market search first, then use this button. The URL needs itemID and itemName.');
-                return;
-            }
-            addItem(name, id, catalogSearch, catalogResults);
-        });
-
         box.querySelector('#aaa-mf-add').addEventListener('click', () => {
             const nameInput = box.querySelector('#aaa-mf-name');
             const idInput = box.querySelector('#aaa-mf-id');
@@ -182,30 +133,18 @@
                 alert('Please enter both an item name and its numeric Torn item ID.');
                 return;
             }
-            addItem(name, id, catalogSearch, catalogResults);
+            if (items.some(item => String(item.id) === id)) {
+                alert('That item ID is already in your list.');
+                return;
+            }
+
+            items.push({ id, name, favorite: false });
+            saveItems();
             nameInput.value = '';
             idInput.value = '';
+            renderItems();
         });
 
-        renderItems();
-    }
-
-
-    function addItem(name, id, searchInput, resultsBox) {
-        const cleanName = String(name || '').trim();
-        const cleanId = String(id || '').trim();
-        if (!cleanName || !/^\\d+$/.test(cleanId)) {
-            alert('I could not read that item name and ID.');
-            return;
-        }
-        if (items.some(item => String(item.id) === cleanId)) {
-            alert('That item is already in your list.');
-            return;
-        }
-        items.push({ id: cleanId, name: cleanName, favorite: false });
-        saveItems();
-        if (searchInput) searchInput.value = '';
-        if (resultsBox) { resultsBox.innerHTML = ''; resultsBox.style.display = 'none'; }
         renderItems();
     }
 
@@ -269,62 +208,15 @@
         });
     }
 
-    function showStartupError(error) {
-        try {
-            let marker = document.getElementById('aaa-mf-debug');
-            if (!marker) {
-                marker = document.createElement('div');
-                marker.id = 'aaa-mf-debug';
-                marker.style.cssText = 'position:fixed!important;top:8px!important;left:8px!important;z-index:2147483647!important;background:#7f1d1d!important;color:#fff!important;padding:10px!important;border:2px solid #ff7777!important;border-radius:8px!important;font:14px sans-serif!important;max-width:90vw!important;';
-                (document.body || document.documentElement).appendChild(marker);
-            }
-            marker.textContent = 'AAA Favourites v4.5 error: ' + (error && error.message ? error.message : String(error));
-        } catch (_) {}
-        console.error('[AAA Market Favourites] Startup error:', error);
-    }
-
-    function ensureToolbar() {
-        try {
-            let box = document.getElementById('aaa-market-favourites');
-            // Rebuild incomplete/stale toolbar markup left behind by an earlier script version.
-            if (box && (!box.isConnected || !box.querySelector('#aaa-mf-collapse') || !box.querySelector('#aaa-mf-body'))) {
-                box.remove();
-                box = null;
-            }
-            if (!box) createToolbar();
-            box = document.getElementById('aaa-market-favourites');
-            if (box) {
-                box.style.setProperty('display', 'block', 'important');
-                box.style.setProperty('visibility', 'visible', 'important');
-                box.style.setProperty('opacity', '1', 'important');
-                box.style.setProperty('pointer-events', 'auto', 'important');
-                box.style.setProperty('position', 'fixed', 'important');
-                box.style.setProperty('top', '70px', 'important');
-                box.style.setProperty('left', '10px', 'important');
-                box.style.setProperty('z-index', '2147483647', 'important');
-            }
-        } catch (error) {
-            showStartupError(error);
-        }
-    }
-
     function start() {
-        try {
-        ensureToolbar();
-
-        // Torn is a single-page app and may replace large parts of its DOM.
-        // Watch the document itself and also retry periodically in case the
-        // app replaces the observed root or removes the toolbar during a render.
-        const observer = new MutationObserver(() => ensureToolbar());
-        observer.observe(document, { childList: true, subtree: true });
-
-        window.addEventListener('load', ensureToolbar);
-        window.addEventListener('hashchange', ensureToolbar);
-        window.addEventListener('popstate', ensureToolbar);
-        window.setInterval(ensureToolbar, 2000);
-        } catch (error) {
-            showStartupError(error);
-        }
+        createToolbar();
+        // Re-add if Torn replaces its page content during navigation.
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById('aaa-market-favourites') && document.documentElement) {
+                createToolbar();
+            }
+        });
+        if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
     }
 
     if (document.readyState === 'loading') {
