@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.4
+// @version      5.5
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -98,11 +98,42 @@
         return match ? decode(match[1]) : '';
     }
 
+    function cleanPossibleName(value) {
+        const name = String(value || '').replace(/\s+/g, ' ').trim();
+        if (!name || name.length > 120) return '';
+        if (/^(item\s*\d+|undefined|null)$/i.test(name)) return '';
+        return name;
+    }
+
+    function elementLabel(element) {
+        if (!element) return '';
+        const attributes = ['alt', 'title', 'aria-label', 'data-item-name', 'data-itemname'];
+        for (const attribute of attributes) {
+            const value = cleanPossibleName(element.getAttribute && element.getAttribute(attribute));
+            if (value) return value;
+        }
+        if ('value' in element) {
+            const value = cleanPossibleName(element.value);
+            if (value) return value;
+        }
+        return '';
+    }
+
     function nameNear(element) {
         let node = element;
-        for (let i = 0; i < 7 && node; i++, node = node.parentElement) {
+        for (let i = 0; i < 8 && node; i++, node = node.parentElement) {
+            const directLabel = elementLabel(node);
+            if (directLabel) return directLabel;
+
+            const selected = node.querySelector('option:checked');
+            const selectedName = cleanPossibleName(selected && selected.textContent);
+            if (selectedName) return selectedName;
+
             const heading = node.querySelector('h1,h2,h3,h4,.title,.item-name,[class*="item-name"],[class*="itemName"]');
-            if (heading && heading.textContent.trim()) return heading.textContent.trim();
+            if (heading) {
+                const headingName = cleanPossibleName(heading.textContent);
+                if (headingName) return headingName;
+            }
         }
         return '';
     }
@@ -129,13 +160,35 @@
                 const text = element.getAttribute('href') || element.getAttribute('data-item-id') || element.getAttribute('data-itemid') || element.getAttribute('itemid') || element.getAttribute('data-item') || element.getAttribute('src') || '';
                 const foundId = findItemIdInUrl(text) || (String(text).match(/(?:^|\/)items?\/(\d+)(?:\D|$)/i) || [])[1];
                 if (!foundId) return;
-                const foundName = findItemNameInUrl(text) || nameNear(element) || '';
+
+                const foundName = findItemNameInUrl(text) || elementLabel(element) || nameNear(element) || '';
                 const marketArea = element.closest('.item-market-wrap,.item-market,.market-wrap,[class*="item-market"],[class*="itemMarket"]');
-                candidates.push({ id: String(foundId), name: foundName, priority: marketArea ? 0 : 1 });
+                candidates.push({ id: String(foundId), name: cleanPossibleName(foundName), priority: marketArea ? 0 : 1 });
             });
         });
 
-        candidates.sort((a, b) => a.priority - b.priority);
+        // Torn can expose the selected item through a combobox/input rather than the URL.
+        // Use the visible item name to improve the label when the item image only gives us an ID.
+        const visibleNames = [];
+        document.querySelectorAll('input,select,[role="combobox"]').forEach(element => {
+            const value = element.tagName === 'SELECT'
+                ? cleanPossibleName(element.options[element.selectedIndex] && element.options[element.selectedIndex].textContent)
+                : elementLabel(element);
+            if (value) visibleNames.push(value);
+        });
+
+        candidates.forEach(candidate => {
+            if (candidate.name) return;
+            const match = visibleNames.find(value => value && !/^search|item market|price|owner|quantity|buy$/i.test(value));
+            if (match) candidate.name = match;
+        });
+
+        candidates.sort((a, b) => {
+            const priorityDifference = a.priority - b.priority;
+            if (priorityDifference) return priorityDifference;
+            return Number(Boolean(b.name)) - Number(Boolean(a.name));
+        });
+
         if (!candidates.length) return null;
 
         const best = candidates[0];
