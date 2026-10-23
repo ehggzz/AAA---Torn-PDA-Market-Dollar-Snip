@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.5
+// @version      5.6
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -143,12 +143,18 @@
         let id = findItemIdInUrl(urlText);
         let name = findItemNameInUrl(urlText);
 
-        if (id) {
-            const builtIn = BUILT_IN_ITEMS.find(item => String(item.id) === String(id));
-            return { id: String(id), name: name || (builtIn ? builtIn.name : ('Item ' + id)) };
+        const urlBuiltIn = id ? BUILT_IN_ITEMS.find(item => String(item.id) === String(id)) : null;
+        // If the URL has an ID but no name, keep searching the rendered page.
+        // The previous version returned "Item 897" here before inspecting the DOM.
+        if (id && (name || urlBuiltIn)) {
+            return { id: String(id), name: name || urlBuiltIn.name };
         }
 
         const candidates = [];
+        if (id) {
+            // Keep the URL ID as a fallback, but allow a named DOM candidate to win.
+            candidates.push({ id: String(id), name: cleanPossibleName(name), priority: 0, fromUrl: true });
+        }
         const selectors = [
             'a[href*="itemID="]',
             '[data-item-id]', '[data-itemid]', '[itemid]', '[data-item]',
