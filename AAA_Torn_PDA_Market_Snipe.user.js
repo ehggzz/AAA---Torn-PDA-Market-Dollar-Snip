@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.6
+// @version      5.7
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -39,8 +39,10 @@
         const savedName = String(item.name || '').trim();
         const builtIn = BUILT_IN_ITEMS.find(entry => String(entry.id) === id);
         // Repair generic fallback labels for known items without changing IDs, favourites, or storage.
-        const name = builtIn && (!savedName || new RegExp('^Item\\\\s*' + id + '
-
+        const isFallbackName = !savedName || savedName.toLowerCase() === ('item ' + id).toLowerCase();
+        const name = builtIn && isFallbackName ? builtIn.name : (savedName || ('Item ' + id));
+        return { id, name, favorite: Boolean(item.favorite) };
+    }
     function readItems() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
