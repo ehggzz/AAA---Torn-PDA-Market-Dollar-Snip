@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.5
+// @version      4.6
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -75,7 +75,9 @@
     }
 
     function createToolbar() {
-        if (document.getElementById('aaa-market-favourites')) return;
+        const existing = document.getElementById('aaa-market-favourites');
+        if (existing && existing.isConnected && existing.querySelector('#aaa-mf-collapse')) return;
+        if (existing) existing.remove();
         const root = document.body || document.documentElement;
         if (!root) return;
 
@@ -283,8 +285,14 @@
 
     function ensureToolbar() {
         try {
-            if (!document.getElementById('aaa-market-favourites')) createToolbar();
-            const box = document.getElementById('aaa-market-favourites');
+            let box = document.getElementById('aaa-market-favourites');
+            // Rebuild incomplete/stale toolbar markup left behind by an earlier script version.
+            if (box && (!box.isConnected || !box.querySelector('#aaa-mf-collapse') || !box.querySelector('#aaa-mf-body'))) {
+                box.remove();
+                box = null;
+            }
+            if (!box) createToolbar();
+            box = document.getElementById('aaa-market-favourites');
             if (box) {
                 box.style.setProperty('display', 'block', 'important');
                 box.style.setProperty('visibility', 'visible', 'important');
