@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -49,7 +49,7 @@
     }
 
     let items = readItems();
-    let collapsed = false;
+    let collapsed = true;
 
     function saveItems() {
         try {
@@ -79,10 +79,13 @@
         const box = document.createElement('section');
         box.id = 'aaa-market-favourites';
         box.style.cssText = styles.toolbar;
+        // Start as a compact floating launcher on every page load.
+        box.style.width = 'auto';
+        box.style.maxHeight = 'none';
         box.innerHTML = `
             <header id="aaa-mf-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#2b2b36;border-radius:9px 9px 0 0;border-bottom:1px solid #444;font-weight:700;touch-action:pan-y;">
-                <span>⭐ AAA Market Favourites</span>
-                <button id="aaa-mf-collapse" type="button" aria-label="Collapse toolbar" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:32px;">−</button>
+                <span id="aaa-mf-title" style="display:none;">⭐ AAA Market Favourites</span>
+                <button id="aaa-mf-collapse" type="button" aria-label="Open favourites toolbar" title="Open favourites" style="${styles.button}color:#2ecc71;font-weight:bold;min-width:42px;">⭐</button>
             </header>
             <div id="aaa-mf-body" style="padding:10px;">
                 <input id="aaa-mf-search" type="search" placeholder="Search saved items…" aria-label="Search saved items" style="${styles.input}margin-bottom:8px;">
@@ -100,12 +103,24 @@
 
         const body = box.querySelector('#aaa-mf-body');
         const collapse = box.querySelector('#aaa-mf-collapse');
-        collapse.addEventListener('click', () => {
-            collapsed = !collapsed;
+        const title = box.querySelector('#aaa-mf-title');
+
+        function setCollapsed(value) {
+            collapsed = value;
             body.style.display = collapsed ? 'none' : 'block';
-            collapse.textContent = collapsed ? '+' : '−';
+            title.style.display = collapsed ? 'none' : 'inline';
+            collapse.textContent = collapsed ? '⭐' : '−';
+            collapse.title = collapsed ? 'Open favourites' : 'Minimise favourites';
+            collapse.setAttribute('aria-label', collapse.title);
             box.style.width = collapsed ? 'auto' : '290px';
-        });
+            box.style.maxHeight = collapsed ? 'none' : '75vh';
+            box.style.borderRadius = collapsed ? '12px' : '12px';
+            box.querySelector('#aaa-mf-header').style.borderRadius = collapsed ? '9px' : '9px 9px 0 0';
+            box.querySelector('#aaa-mf-header').style.borderBottom = collapsed ? '0' : '1px solid #444';
+        }
+
+        setCollapsed(true);
+        collapse.addEventListener('click', () => setCollapsed(!collapsed));
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
         box.querySelector('#aaa-mf-add').addEventListener('click', () => {
