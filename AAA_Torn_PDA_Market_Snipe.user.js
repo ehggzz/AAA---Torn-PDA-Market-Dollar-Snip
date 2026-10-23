@@ -68,8 +68,7 @@
             window.location.hash = `#/p=shop&type=${targetIDs[prevIndex]}`;
         }
     }
-
-    function createToolbar() {
+        function createToolbar() {
         let toolbar = document.getElementById('aaa-npc-toolbar');
         if (toolbar) return;
 
@@ -223,8 +222,7 @@
             }
         });
     }
-
-    function renderTargetButtons() {
+        function renderTargetButtons() {
         const container = document.getElementById('aaa-target-buttons');
         if (!container) return;
 
