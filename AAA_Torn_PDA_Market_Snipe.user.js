@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AAA - Torn PDA Market & Dollar Snipe
 // @namespace    http://tampermonkey.net/
-// @version      3.4
-// @description  PDA Mobile: Universal market detection, minimised compact pill, item autocomplete, $1 sale detector, and robust PDA loading.
+// @version      3.5
+// @description  PDA Mobile: robust toolbox visibility test, item autocomplete, and $1 sale detector.
 // @author       You
 // @match        *://*.torn.com/*
 // @match        *://torn.com/*
@@ -75,7 +75,12 @@
         const href = window.location.href || '';
         const path = window.location.pathname || '';
         const hash = window.location.hash || '';
-        return path.includes('imarket.php') || href.includes('imarket.php') || hash.includes('p=shop');
+        const search = window.location.search || '';
+        return path.includes('imarket.php') ||
+            href.toLowerCase().includes('imarket.php') ||
+            href.toLowerCase().includes('itemmarket') ||
+            search.toLowerCase().includes('sid=itemmarket') ||
+            hash.toLowerCase().includes('p=shop');
     }
 
     function getCurrentItemID() {
@@ -120,7 +125,8 @@
     }
 
     function createToolbar() {
-        if (!isMarketPage()) return null;
+        // v3.5 test: show the toolbox on any Torn page so we can isolate
+        // whether Market-page detection was preventing it from appearing.
         if (document.getElementById('aaa-npc-toolbar')) return document.getElementById('aaa-npc-toolbar');
 
         const toolbar = document.createElement('div');
@@ -398,12 +404,8 @@
     }
 
     function ensureToolbar() {
-        if (!isMarketPage()) {
-            const existing = document.getElementById('aaa-npc-toolbar');
-            if (existing) existing.remove();
-            return;
-        }
-
+        // Temporary visibility test: do not hide the toolbox away from Market.
+        // Listing scans still run only when isMarketPage() returns true.
         if (!document.getElementById('aaa-npc-toolbar')) createToolbar();
     }
 
