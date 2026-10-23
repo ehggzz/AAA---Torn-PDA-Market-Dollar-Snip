@@ -1,19 +1,20 @@
 // ==UserScript==
 // @name         AAA - Torn PDA Market & Dollar Snipe
 // @namespace    http://tampermonkey.net/
-// @version      3.2
-// @description  PDA Mobile: Minimised compact pill, item autocomplete, $1 sale detector, and auto-reset offscreen menu.
+// @version      3.3
+// @description  PDA Mobile: Universal market detection, minimised compact pill, item autocomplete, $1 sale detector.
 // @author       You
 // @match        *://*.torn.com/*
 // @match        *://torn.com/*
+// @run-at       document-end
 // @grant        none
 // ==/UserScript==
-
 
 (function() {
     'use strict';
 
-    // NPC Resale Item Database
+    console.log("AAA Snipe script active");
+
     const NPC_DATABASE = [
         { id: 180, name: "Beer", npcPrice: 10 },
         { id: 181, name: "Cigar", npcPrice: 20 },
@@ -70,30 +71,26 @@
             window.location.hash = `#/p=shop&type=${targetIDs[prevIndex]}`;
         }
     }
-        function createToolbar() {
+
+    function createToolbar() {
         let toolbar = document.getElementById('aaa-npc-toolbar');
         if (toolbar) return;
 
         toolbar = document.createElement('div');
         toolbar.id = 'aaa-npc-toolbar';
 
-        let savedPos = JSON.parse(localStorage.getItem('aaa_toolbar_pos_mobile')) || { top: '60px', left: '10px' };
-        let topVal = parseInt(savedPos.top, 10);
-        let leftVal = parseInt(savedPos.left, 10);
-
-        if (isNaN(topVal) || topVal < 0 || topVal > window.innerHeight - 50) savedPos.top = '60px';
-        if (isNaN(leftVal) || leftVal < 0 || leftVal > window.innerWidth - 50) savedPos.left = '10px';
+        let savedPos = JSON.parse(localStorage.getItem('aaa_toolbar_pos_mobile')) || { top: '70px', left: '10px' };
 
         toolbar.style.cssText = `
-            position: fixed;
-            top: ${savedPos.top};
-            left: ${savedPos.left};
-            z-index: 999999;
+            position: fixed !important;
+            top: ${savedPos.top} !important;
+            left: ${savedPos.left} !important;
+            z-index: 9999999 !important;
             background: #1e1e24;
             color: #f1f1f1;
             border: 2px solid #2ecc71;
             border-radius: 10px;
-            box-shadow: 0 4px 18px rgba(0,0,0,0.6);
+            box-shadow: 0 4px 18px rgba(0,0,0,0.8);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 13px;
             width: 280px;
@@ -133,7 +130,7 @@
             </div>
         `;
 
-        document.body.appendChild(toolbar);
+        (document.body || document.documentElement).appendChild(toolbar);
 
         renderTargetButtons();
         setupAutocomplete();
@@ -224,7 +221,8 @@
             }
         });
     }
-        function renderTargetButtons() {
+
+    function renderTargetButtons() {
         const container = document.getElementById('aaa-target-buttons');
         if (!container) return;
 
@@ -351,19 +349,14 @@
         }
     }
 
-    window.addEventListener('dblclick', () => {
-        const toolbar = document.getElementById('aaa-npc-toolbar');
-        if (toolbar) {
-            toolbar.style.top = '60px';
-            toolbar.style.left = '10px';
-            localStorage.setItem('aaa_toolbar_pos_mobile', JSON.stringify({ top: '60px', left: '10px' }));
-        }
-    });
-
     setInterval(() => {
-        if (window.location.href.includes('imarket.php')) {
+        const isMarketPage = window.location.href.includes('imarket') || 
+                             window.location.hash.includes('p=shop') || 
+                             document.querySelector('.item-market-wrap');
+
+        if (isMarketPage) {
             createToolbar();
             scanListings();
         }
-    }, 1000);
+    }, 800);
 })();
