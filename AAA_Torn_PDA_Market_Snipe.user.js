@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.2
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -15,10 +15,13 @@
 
     const STORAGE_KEY = 'aaa_market_shortcuts_v4';
     const BUILT_IN_ITEMS = [
-        { id: 6, name: 'Beer' },
-        { id: 19, name: 'Cigar' },
-        { id: 206, name: 'Xanax' },
-        { id: 5, name: 'Bottle of Water' }
+        { id: 180, name: 'Beer' }, { id: 181, name: 'Cigar' }, { id: 206, name: 'Xanax' },
+        { id: 226, name: 'Bottle of Beer' }, { id: 366, name: 'X-Mass Cupcake' },
+        { id: 367, name: 'Fruitcake' }, { id: 5, name: 'Bottle of Water' },
+        { id: 182, name: 'Cannabis' }, { id: 183, name: 'Ecstasy' }, { id: 184, name: 'Ketamine' },
+        { id: 185, name: 'LSD' }, { id: 186, name: 'Opium' }, { id: 187, name: 'PCP' },
+        { id: 188, name: 'Shrooms' }, { id: 189, name: 'Speed' }, { id: 190, name: 'Vicodin' },
+        { id: 17, name: 'Blank CD' }, { id: 18, name: 'DVD' }, { id: 19, name: 'Brick' }
     ];
 
     const styles = {
@@ -92,6 +95,10 @@
                 <div id="aaa-mf-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;"></div>
                 <div style="border-top:1px solid #444;padding-top:10px;">
                     <div style="font-weight:700;margin-bottom:7px;">Add an item</div>
+                    <input id="aaa-mf-catalog-search" type="search" placeholder="Find an item by name…" aria-label="Find an item by name" style="${styles.input}margin-bottom:6px;">
+                    <div id="aaa-mf-catalog-results" style="display:none;max-height:150px;overflow:auto;margin-bottom:8px;"></div>
+                    <button id="aaa-mf-add-current" type="button" style="width:100%;${styles.button}margin-bottom:8px;">＋ Add item from current market page</button>
+                    <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Or enter details manually:</div>
                     <input id="aaa-mf-name" type="text" placeholder="Item name (e.g. Xanax)" style="${styles.input}margin-bottom:6px;">
                     <input id="aaa-mf-id" type="number" inputmode="numeric" placeholder="Torn item ID" style="${styles.input}margin-bottom:6px;">
                     <button id="aaa-mf-add" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;">+ Add item</button>
@@ -123,6 +130,46 @@
         collapse.addEventListener('click', () => setCollapsed(!collapsed));
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
+
+        const catalogSearch = box.querySelector('#aaa-mf-catalog-search');
+        const catalogResults = box.querySelector('#aaa-mf-catalog-results');
+        catalogSearch.addEventListener('input', () => {
+            const query = catalogSearch.value.trim().toLowerCase();
+            catalogResults.innerHTML = '';
+            if (!query) { catalogResults.style.display = 'none'; return; }
+            const matches = BUILT_IN_ITEMS.filter(item =>
+                item.name.toLowerCase().includes(query) || String(item.id).includes(query)
+            );
+            if (!matches.length) {
+                const empty = document.createElement('div');
+                empty.textContent = 'Not in the quick list. Open its market search and use the button below.';
+                empty.style.cssText = 'color:#aaa;padding:7px;font-size:11px;';
+                catalogResults.appendChild(empty);
+            } else {
+                matches.forEach(item => {
+                    const add = document.createElement('button');
+                    add.type = 'button';
+                    add.textContent = item.name + ' (ID ' + item.id + ')  ＋';
+                    add.style.cssText = styles.button + 'display:block;width:100%;text-align:left;margin-bottom:4px;';
+                    add.addEventListener('click', () => addItem(item.name, String(item.id), catalogSearch, catalogResults));
+                    catalogResults.appendChild(add);
+                });
+            }
+            catalogResults.style.display = 'block';
+        });
+
+        box.querySelector('#aaa-mf-add-current').addEventListener('click', () => {
+            const hash = window.location.hash || '';
+            const params = new URLSearchParams(hash.replace(/^#\\/?/, ''));
+            const id = params.get('itemID');
+            const name = params.get('itemName');
+            if (!id || !/^\\d+$/.test(id) || !name) {
+                alert('Open an item-specific Item Market search first, then use this button. The URL needs itemID and itemName.');
+                return;
+            }
+            addItem(name, id, catalogSearch, catalogResults);
+        });
+
         box.querySelector('#aaa-mf-add').addEventListener('click', () => {
             const nameInput = box.querySelector('#aaa-mf-name');
             const idInput = box.querySelector('#aaa-mf-id');
@@ -133,18 +180,30 @@
                 alert('Please enter both an item name and its numeric Torn item ID.');
                 return;
             }
-            if (items.some(item => String(item.id) === id)) {
-                alert('That item ID is already in your list.');
-                return;
-            }
-
-            items.push({ id, name, favorite: false });
-            saveItems();
+            addItem(name, id, catalogSearch, catalogResults);
             nameInput.value = '';
             idInput.value = '';
-            renderItems();
         });
 
+        renderItems();
+    }
+
+
+    function addItem(name, id, searchInput, resultsBox) {
+        const cleanName = String(name || '').trim();
+        const cleanId = String(id || '').trim();
+        if (!cleanName || !/^\\d+$/.test(cleanId)) {
+            alert('I could not read that item name and ID.');
+            return;
+        }
+        if (items.some(item => String(item.id) === cleanId)) {
+            alert('That item is already in your list.');
+            return;
+        }
+        items.push({ id: cleanId, name: cleanName, favorite: false });
+        saveItems();
+        if (searchInput) searchInput.value = '';
+        if (resultsBox) { resultsBox.innerHTML = ''; resultsBox.style.display = 'none'; }
         renderItems();
     }
 
