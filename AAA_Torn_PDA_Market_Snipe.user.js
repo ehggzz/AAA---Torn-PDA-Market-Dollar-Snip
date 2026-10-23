@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      5.8
+// @version      5.9
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -201,7 +201,8 @@
 
         const best = candidates[0];
         const builtIn = BUILT_IN_ITEMS.find(item => String(item.id) === best.id);
-        return { id: best.id, name: best.name || (builtIn ? builtIn.name : ('Item ' + best.id)) };
+        // Prefer a verified built-in label over unrelated page text (e.g. a generic UserList label).
+        return { id: best.id, name: builtIn ? builtIn.name : (best.name || ('Item ' + best.id)) };
     }
 
     function createToolbar() {
@@ -405,6 +406,25 @@
                 renderItems();
             });
 
+            const rename = document.createElement('button');
+            rename.type = 'button';
+            rename.textContent = '✎';
+            rename.title = 'Change nickname';
+            rename.setAttribute('aria-label', 'Change nickname for ' + item.name);
+            rename.style.cssText = styles.button + 'min-width:30px;color:#8ecbff;font-size:15px;padding:4px;';
+            rename.addEventListener('click', () => {
+                const nextName = window.prompt('Choose a nickname for this item:', item.name);
+                if (nextName === null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) {
+                    alert('The nickname cannot be empty.');
+                    return;
+                }
+                item.name = trimmed;
+                saveItems();
+                renderItems();
+            });
+
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.textContent = '×';
@@ -417,7 +437,7 @@
                 renderItems();
             });
 
-            row.append(open, fav, remove);
+            row.append(open, fav, rename, remove);
             list.appendChild(row);
         });
     }
