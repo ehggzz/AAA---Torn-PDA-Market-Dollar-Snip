@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Item Market Favourites
 // @namespace    http://tampermonkey.net/
-// @version      4.7
+// @version      4.8
 // @description  A simple, user-controlled Item Market shortcut toolbar with saved items and favourites.
 // @author       You
 // @match        *://*.torn.com/*
@@ -94,6 +94,7 @@
                     <div style="font-weight:700;margin-bottom:7px;">Add an item</div>
                     <input id="aaa-mf-name" type="text" placeholder="Item name (e.g. Xanax)" style="${styles.input}margin-bottom:6px;">
                     <input id="aaa-mf-id" type="number" inputmode="numeric" placeholder="Torn item ID" style="${styles.input}margin-bottom:6px;">
+                    <button id="aaa-mf-use-current" type="button" style="${styles.button}width:100%;margin-bottom:6px;border-color:#2ecc71;">Use item from this market page</button>
                     <button id="aaa-mf-add" type="button" style="width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:9px;font-weight:700;font-size:13px;">+ Add item</button>
                     <div style="font-size:11px;color:#aaa;line-height:1.4;margin-top:7px;">Tip: enter the item's exact Torn ID so the shortcut opens the right market search.</div>
                 </div>
@@ -123,6 +124,28 @@
         collapse.addEventListener('click', () => setCollapsed(!collapsed));
 
         box.querySelector('#aaa-mf-search').addEventListener('input', renderItems);
+        box.querySelector('#aaa-mf-use-current').addEventListener('click', () => {
+            // Read the current item only from Torn's page URL; no page scanning or network requests.
+            const source = window.location.href;
+            const decoded = (() => { try { return decodeURIComponent(source); } catch (e) { return source; } })();
+            const idMatch = decoded.match(/[?&#&]itemID=(\d+)/i) || decoded.match(/[?&#&]itemId=(\d+)/i);
+            const nameMatch = decoded.match(/[?&#&]itemName=([^&#]+)/i);
+            const id = idMatch ? idMatch[1] : '';
+            const name = nameMatch ? nameMatch[1].replace(/\+/g, ' ').trim() : '';
+
+            if (!id) {
+                alert('I could not find an item ID in this page URL. Open that item’s specific Item Market search page, then try again.');
+                return;
+            }
+
+            box.querySelector('#aaa-mf-id').value = id;
+            if (name) {
+                box.querySelector('#aaa-mf-name').value = name;
+            } else {
+                alert('I found item ID ' + id + ', but not its name. Please type the item name, then press + Add item.');
+            }
+        });
+
         box.querySelector('#aaa-mf-add').addEventListener('click', () => {
             const nameInput = box.querySelector('#aaa-mf-name');
             const idInput = box.querySelector('#aaa-mf-id');
