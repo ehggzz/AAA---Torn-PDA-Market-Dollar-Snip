@@ -91,13 +91,13 @@
   function getCurrentItemId() {
     const candidates = [location.href, location.search, location.hash, location.pathname];
     for (const value of candidates) {
-      const m = value.match(/(?:item_id|itemid|item|ID|id)[=/:_-](\\d{1,6})/i);
+      const m = value.match(/(?:item_id|itemid|item|ID|id)[=/:_-](\d{1,6})/i);
       if (m) return m[1];
     }
     const el = document.querySelector('[data-itemid],[data-item-id],[data-item]');
     if (el) {
       const id = el.getAttribute('data-itemid') || el.getAttribute('data-item-id') || el.getAttribute('data-item');
-      if (/^\\d+$/.test(id || '')) return id;
+      if (/^\d+$/.test(id || '')) return id;
     }
     return null;
   }
