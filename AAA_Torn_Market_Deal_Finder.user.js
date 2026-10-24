@@ -1,179 +1,206 @@
 // ==UserScript==
 // @name         AAA - Torn Market Deal Finder
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  User-triggered NPC-profit and $1 deal highlighting for the currently viewed Torn market page.
-// @author       You
-// @match        *://*.torn.com/*
-// @match        *://torn.com/*
-// @run-at       document-end
+// @version      2.0
+// @description  Torn market/bazaar deal scanner with draggable expandable toolbar, NPC-profit targets, and visible listing highlights.
+// @match        https://www.torn.com/*
 // @grant        none
 // ==/UserScript==
 
-(function () {
-    'use strict';
+(() => {
+  'use strict';
 
-    const KEY = 'aaa_market_deal_api_key_v1';
-    const CACHE = 'aaa_market_deal_npc_cache_v1';
-    const STYLE_ID = 'aaa-market-deal-finder-style';
-    const PANEL_ID = 'aaa-market-deal-finder';
-    const ROW_SELECTOR = '.item-market-wrap .shop-market-list > li, #bazaarRoot li';
+  const KEY = 'aaa_market_deal_api_key_v1';
+  const CACHE = 'aaa_market_deal_npc_cache_v1';
+  const POS = 'aaa_market_deal_toolbar_position_v1';
+  const STYLE_ID = 'aaa-market-deal-finder-style';
+  const PANEL_ID = 'aaa-market-deal-finder';
 
-    function money(value) {
-        return '$' + Number(value || 0).toLocaleString();
+  const state = { open: false, scanning: false, results: [] };
+
+  const builtInTargets = [
+    { id: '180', name: 'Bottle of Beer' },
+    { id: '206', name: 'Xanax' },
+    { id: '897', name: 'Bottle Cap' }
+  ];
+
+  const money = n => '$' + Number(n || 0).toLocaleString('en-US');
+
+  function addStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const s = document.createElement('style');
+    s.id = STYLE_ID;
+    s.textContent = `
+      #${PANEL_ID}{position:fixed;right:18px;bottom:18px;width:330px;z-index:2147483647;font:13px Arial,sans-serif;color:#fff;background:#1f1f1f;border:1px solid #ffc247;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden}
+      #${PANEL_ID} .aaa-head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#111;border-bottom:1px solid #444;cursor:grab;user-select:none}
+      #${PANEL_ID} .aaa-head:active{cursor:grabbing}
+      #${PANEL_ID} .aaa-tab{flex:1;color:#ffc247;font-weight:bold;cursor:pointer}
+      #${PANEL_ID} .aaa-toggle{border:0;background:transparent;color:#ffc247;font-size:18px;line-height:1;cursor:pointer;padding:0 3px}
+      #${PANEL_ID} .aaa-body{padding:10px;max-height:55vh;overflow:auto}
+      #${PANEL_ID}.aaa-closed .aaa-body{display:none}
+      #${PANEL_ID} button{background:#ffc247;color:#111;border:0;border-radius:6px;padding:7px 9px;font-weight:bold;cursor:pointer;margin:2px}
+      #${PANEL_ID} button.secondary{background:#333;color:#fff;border:1px solid #666}
+      #${PANEL_ID} .aaa-status{margin:7px 0;color:#ddd}
+      #${PANEL_ID} .aaa-target{padding:7px 8px;margin:4px 0;background:#292929;border-radius:6px;border-left:4px solid #ffc247}
+      #${PANEL_ID} .aaa-target small{display:block;color:#aaa;margin-top:2px}
+      #${PANEL_ID} .aaa-good{color:#9cff9c;font-weight:bold}
+      #${PANEL_ID} .aaa-dollar{color:#ffc247;font-weight:bold}
+      .aaa-deal-highlight{outline:2px solid #8cff8c!important;outline-offset:-2px!important;background:rgba(70,180,70,.12)!important}
+      .aaa-dollar-highlight{outline:2px solid #ffc247!important;outline-offset:-2px!important;background:rgba(255,194,71,.16)!important}
+      .aaa-deal-badge{display:block;margin-top:4px;padding:3px 5px;border-radius:4px;background:#162416;color:#9cff9c;font:bold 12px Arial,sans-serif;z-index:9999}
+      .aaa-dollar-badge{display:block;margin-top:4px;padding:3px 5px;border-radius:4px;background:#332b16;color:#ffc247;font:bold 12px Arial,sans-serif;z-index:9999}
+    `;
+    document.head.appendChild(s);
+  }
+
+  function loadPos() {
+    try { return JSON.parse(localStorage.getItem(POS) || 'null'); } catch (_) { return null; }
+  }
+  function savePos(x, y) {
+    localStorage.setItem(POS, JSON.stringify({ x, y }));
+  }
+
+  function makeDraggable(panel, handle) {
+    let drag = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    handle.addEventListener('pointerdown', e => {
+      if (e.target.closest('button') || e.target.closest('.aaa-tab')) return;
+      drag = true; handle.setPointerCapture(e.pointerId);
+      const r = panel.getBoundingClientRect(); sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    });
+    handle.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const x = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, ox + e.clientX - sx));
+      const y = Math.max(0, Math.min(window.innerHeight - 40, oy + e.clientY - sy));
+      panel.style.left = x + 'px'; panel.style.top = y + 'px';
+    });
+    handle.addEventListener('pointerup', () => {
+      if (!drag) return; drag = false;
+      const r = panel.getBoundingClientRect(); savePos(r.left, r.top);
+    });
+  }
+
+  function getCurrentItemId() {
+    const text = location.href + ' ' + document.body.innerText.slice(0, 3000);
+    const m = text.match(/(?:item(?:id)?[=\/ ]|\/items\/)(\d{1,6})/i);
+    if (m) return m[1];
+    const path = location.pathname.match(/(?:item|market)[^\d]*(\d{1,6})/i);
+    return path ? path[1] : null;
+  }
+
+  function getApiKey() {
+    let key = localStorage.getItem(KEY);
+    if (!key) {
+      key = prompt('Torn API key needed for NPC sell prices. Use a Public Only key with torn/items permission.\n\nPaste your API key:');
+      if (key) localStorage.setItem(KEY, key.trim());
     }
+    return key && key.trim();
+  }
 
-    function currentItemId() {
-        const text = window.location.href + ' ' + window.location.hash + ' ' + window.location.search;
-        const match = text.match(/[?&#]itemID(?:=|%3D)(\d+)/i) || text.match(/itemID=(\d+)/i);
-        if (match) return match[1];
-        const hash = new URLSearchParams(window.location.hash.replace(/^#\/?/, '?'));
-        return hash.get('type') || hash.get('typeID') || null;
+  async function getNpcPrice(id) {
+    let cache = {};
+    try { cache = JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (_) {}
+    const hit = cache[id];
+    if (hit && Date.now() - hit.time < 7 * 86400000) return hit.sell;
+    const key = getApiKey();
+    if (!key) return null;
+    try {
+      const res = await fetch(`https://api.torn.com/torn/${encodeURIComponent(id)}?selections=items&key=${encodeURIComponent(key)}`);
+      if (!res.ok) throw new Error('API HTTP ' + res.status);
+      const data = await res.json();
+      const item = data.items && data.items[id];
+      const sell = Number(item && (item.sell_price ?? item.sell ?? item.market_value));
+      if (!Number.isFinite(sell) || sell <= 0) return null;
+      cache[id] = { sell, time: Date.now() };
+      localStorage.setItem(CACHE, JSON.stringify(cache));
+      return sell;
+    } catch (e) {
+      console.warn('[AAA Deal Finder] NPC lookup failed', e);
+      return null;
     }
+  }
 
-    function readCache() {
-        try { return JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (_) { return {}; }
+  function rowElements() {
+    return [...document.querySelectorAll('.item-market-wrap li, #bazaarRoot li, [class*="market"] li, [class*="bazaar"] li')]
+      .filter(el => el.offsetParent !== null && el.getBoundingClientRect().width > 0);
+  }
+
+  function parsePrice(row) {
+    const text = row.innerText || row.textContent || '';
+    const matches = [...text.matchAll(/\$\s*([\d,]+)/g)].map(m => Number(m[1].replace(/,/g, ''))).filter(Number.isFinite);
+    return matches.length ? Math.min(...matches) : null;
+  }
+
+  function addBadge(row, text, dollar) {
+    row.querySelectorAll('.aaa-deal-badge,.aaa-dollar-badge').forEach(x => x.remove());
+    const b = document.createElement('div');
+    b.className = dollar ? 'aaa-dollar-badge' : 'aaa-deal-badge';
+    b.textContent = text;
+    row.appendChild(b);
+  }
+
+  async function scan() {
+    if (state.scanning) return;
+    state.scanning = true; state.results = [];
+    clearHighlights();
+    status('Scanning visible listings…');
+    const rows = rowElements();
+    if (!rows.length) { status('0 visible listings found. Try opening the actual Item Market/Bazaar listing page first.'); state.scanning = false; return; }
+
+    const itemId = getCurrentItemId();
+    if (!itemId) { status(`Found ${rows.length} visible listings, but I can't identify the current item ID.`); state.scanning = false; return; }
+    const npc = await getNpcPrice(itemId);
+    if (!npc) { status(`Found ${rows.length} listings, but no NPC sell price was returned for item ${itemId}.`); state.scanning = false; return; }
+
+    let dollar = 0, profit = 0;
+    for (const row of rows) {
+      const price = parsePrice(row);
+      if (price == null) continue;
+      if (price === 1) { row.classList.add('aaa-dollar-highlight'); addBadge(row, '🚨 $1 DOLLAR DEAL', true); dollar++; }
+      if (price < npc) {
+        const p = npc - price;
+        row.classList.add('aaa-deal-highlight');
+        addBadge(row, `🟢 NPC ${money(npc)} → ${money(p)} profit`, false);
+        state.results.push({ price, profit: p }); profit += p;
+      }
     }
+    status(`${state.results.length} NPC-profit match${state.results.length === 1 ? '' : 'es'} • ${dollar} $1 deal${dollar === 1 ? '' : 's'} • NPC sell ${money(npc)}`);
+    state.scanning = false;
+    renderTargets(itemId, npc);
+  }
 
-    function writeCache(cache) {
-        try { localStorage.setItem(CACHE, JSON.stringify(cache)); } catch (_) {}
-    }
+  function clearHighlights() {
+    document.querySelectorAll('.aaa-deal-highlight,.aaa-dollar-highlight').forEach(x => x.classList.remove('aaa-deal-highlight','aaa-dollar-highlight'));
+    document.querySelectorAll('.aaa-deal-badge,.aaa-dollar-badge').forEach(x => x.remove());
+  }
 
-    function getSellPrice(data, id) {
-        const item = data && data.items && (data.items[id] || data.items[String(id)]);
-        if (!item) return null;
-        const value = item.value || item;
-        const price = Number(value.sell_price ?? value.sellPrice ?? value.sell);
-        return Number.isFinite(price) && price > 0 ? price : null;
-    }
+  function status(text) { const el = document.querySelector(`#${PANEL_ID} .aaa-status`); if (el) el.textContent = text; }
 
-    async function getNpcPrice(id) {
-        const cache = readCache();
-        const cached = cache[id];
-        if (cached && cached.price && Date.now() - cached.time < 7 * 86400000) return cached.price;
+  function renderTargets(currentId, npc) {
+    const box = document.querySelector(`#${PANEL_ID} .aaa-targets`); if (!box) return;
+    const current = builtInTargets.find(x => x.id === String(currentId));
+    box.innerHTML = builtInTargets.map(x => `<div class="aaa-target"><b>${x.name}</b> <small>ID ${x.id}${x.id === String(currentId) ? ` • current • NPC ${money(npc)}` : ''}</small></div>`).join('');
+    if (current) box.insertAdjacentHTML('afterbegin', `<div class="aaa-status aaa-good">🎯 Currently watching: ${current.name}</div>`);
+  }
 
-        let apiKey = localStorage.getItem(KEY) || '';
-        if (!apiKey) {
-            apiKey = window.prompt('AAA Deal Finder needs a Torn API key to get the NPC sell price.\n\nUse a Public Only key with the torn/items permission. The key is stored only in this browser and sent only to api.torn.com.\n\nPaste your key here:');
-            if (!apiKey) return null;
-            apiKey = apiKey.trim();
-            if (!apiKey) return null;
-            localStorage.setItem(KEY, apiKey);
-        }
+  function createPanel() {
+    if (document.getElementById(PANEL_ID)) return;
+    addStyle();
+    const p = document.createElement('div'); p.id = PANEL_ID;
+    p.innerHTML = `<div class="aaa-head"><div class="aaa-tab" title="Click to open/close">💰 AAA DEAL FINDER</div><button class="aaa-toggle" title="Open / close">−</button></div><div class="aaa-body"><div class="aaa-status">Ready — open an Item Market or Bazaar listing page.</div><div><button class="aaa-scan">🔎 Scan visible deals</button><button class="secondary aaa-clear">Clear highlights</button></div><h4 style="margin:12px 0 5px;color:#ffc247">🎯 Items to watch</h4><div class="aaa-targets"></div></div>`;
+    document.body.appendChild(p);
+    const tab = p.querySelector('.aaa-tab'), toggle = p.querySelector('.aaa-toggle');
+    const setOpen = open => { state.open = open; p.classList.toggle('aaa-closed', !open); toggle.textContent = open ? '−' : '+'; };
+    tab.addEventListener('click', () => setOpen(!state.open));
+    toggle.addEventListener('click', () => setOpen(!state.open));
+    p.querySelector('.aaa-scan').addEventListener('click', scan);
+    p.querySelector('.aaa-clear').addEventListener('click', clearHighlights);
+    makeDraggable(p, p.querySelector('.aaa-head'));
+    const pos = loadPos();
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) { p.style.left = pos.x + 'px'; p.style.top = pos.y + 'px'; p.style.right = 'auto'; p.style.bottom = 'auto'; }
+    setOpen(false);
+  }
 
-        const url = 'https://api.torn.com/torn/' + encodeURIComponent(id) + '?selections=items&key=' + encodeURIComponent(apiKey);
-        const response = await fetch(url);
-        const data = await response.json();
-        if (!response.ok || data.error) {
-            if (data && data.error && /key|access|permission|invalid/i.test(String(data.error.error || data.error))) {
-                localStorage.removeItem(KEY);
-            }
-            throw new Error(data && data.error ? String(data.error.error || data.error) : 'Torn API request failed');
-        }
-        const price = getSellPrice(data, id);
-        if (price) {
-            cache[id] = { price, time: Date.now() };
-            writeCache(cache);
-        }
-        return price;
-    }
-
-    function injectStyle() {
-        if (document.getElementById(STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
-        style.textContent = `
-            #${PANEL_ID}{position:fixed!important;right:10px!important;bottom:18px!important;z-index:2147483647!important;background:#1e1e24;color:#f1f1f1;border:2px solid #2ecc71;border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.8);font:13px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:8px;width:210px;box-sizing:border-box}
-            #${PANEL_ID} button{width:100%;background:#2ecc71;color:#111;border:0;border-radius:6px;padding:8px;font-weight:700;cursor:pointer}
-            #${PANEL_ID} .aaa-deal-status{font-size:11px;color:#aaa;margin-top:6px;line-height:1.35}
-            .aaa-npc-profit-row{background:rgba(46,204,113,.30)!important;outline:2px solid #2ecc71!important;outline-offset:-2px!important}
-            .aaa-dollar-row{background:rgba(241,196,15,.40)!important;outline:2px solid #f1c40f!important;outline-offset:-2px!important}
-            .aaa-deal-tag{font-weight:700;font-size:11px;margin-top:3px;line-height:1.25}
-            .aaa-deal-profit{color:#2ecc71}.aaa-deal-dollar{color:#f1c40f}
-        `;
-        document.documentElement.appendChild(style);
-    }
-
-    function addTag(priceElement, className, text) {
-        const tag = document.createElement('div');
-        tag.className = 'aaa-deal-tag ' + className;
-        tag.textContent = text;
-        priceElement.appendChild(tag);
-    }
-
-    function clearHighlights() {
-        document.querySelectorAll('.aaa-npc-profit-row,.aaa-dollar-row').forEach(row => row.classList.remove('aaa-npc-profit-row','aaa-dollar-row'));
-        document.querySelectorAll('.aaa-deal-tag').forEach(tag => tag.remove());
-    }
-
-    function scanVisibleListings(npcPrice, itemId) {
-        clearHighlights();
-        const rows = Array.from(document.querySelectorAll(ROW_SELECTOR));
-        let dollarDeals = 0;
-        let npcDeals = 0;
-        rows.forEach(row => {
-            const priceElement = row.querySelector('.price,[class*="price"]');
-            if (!priceElement) return;
-            const match = priceElement.textContent.replace(/\s+/g, ' ').match(/\$\s*([\d,]+)/);
-            if (!match) return;
-            const price = Number(match[1].replace(/,/g, ''));
-            if (!Number.isFinite(price)) return;
-
-            if (price === 1) {
-                row.classList.add('aaa-dollar-row');
-                addTag(priceElement, 'aaa-deal-dollar', '🚨 $1 DOLLAR DEAL');
-                dollarDeals++;
-            }
-            if (npcPrice && price < npcPrice) {
-                const profit = npcPrice - price;
-                row.classList.add('aaa-npc-profit-row');
-                addTag(priceElement, 'aaa-deal-profit', '🟢 NPC ' + money(npcPrice) + ' → +' + money(profit) + ' profit');
-                npcDeals++;
-            }
-        });
-        return { rows: rows.length, dollarDeals, npcDeals, itemId };
-    }
-
-    function isActivePage() {
-        return document.visibilityState === 'visible' && document.hasFocus();
-    }
-
-    function createPanel() {
-        if (document.getElementById(PANEL_ID)) return;
-        injectStyle();
-        const panel = document.createElement('div');
-        panel.id = PANEL_ID;
-        panel.innerHTML = '<button type="button" id="aaa-deal-scan">💰 Scan visible deals</button><div class="aaa-deal-status">Only scans the page you are actively viewing.</div>';
-        (document.body || document.documentElement).appendChild(panel);
-        panel.querySelector('#aaa-deal-scan').addEventListener('click', async () => {
-            if (!isActivePage()) {
-                panel.querySelector('.aaa-deal-status').textContent = 'Please focus this Torn tab/window first.';
-                return;
-            }
-            const status = panel.querySelector('.aaa-deal-status');
-            const id = currentItemId();
-            if (!id) {
-                status.textContent = 'Open a specific item market/bazaar page first so I know which NPC price to use.';
-                return;
-            }
-            const button = panel.querySelector('#aaa-deal-scan');
-            button.disabled = true;
-            button.style.opacity = '.6';
-            status.textContent = 'Checking NPC sell price…';
-            try {
-                const npcPrice = await getNpcPrice(id);
-                if (!npcPrice) throw new Error('No NPC sell price is available for this item.');
-                const result = scanVisibleListings(npcPrice, id);
-                status.textContent = 'Found ' + result.npcDeals + ' NPC-profit deal' + (result.npcDeals === 1 ? '' : 's') + (result.dollarDeals ? ' and ' + result.dollarDeals + ' $1 deal' + (result.dollarDeals === 1 ? '' : 's') : '') + '. NPC pays ' + money(npcPrice) + ' each.';
-            } catch (error) {
-                status.textContent = 'Could not scan: ' + String(error.message || error);
-            } finally {
-                button.disabled = false;
-                button.style.opacity = '1';
-            }
-        });
-    }
-
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', createPanel, { once: true });
-    else createPanel();
+  function start() { if (document.body) createPanel(); else setTimeout(start, 100); }
+  start();
 })();
