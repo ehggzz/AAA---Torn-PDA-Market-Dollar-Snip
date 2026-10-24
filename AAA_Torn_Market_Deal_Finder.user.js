@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Market Deal Finder
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Torn market/bazaar deal scanner with draggable expandable toolbar, NPC-profit targets, and visible listing highlights.
 // @match        https://www.torn.com/*
 // @grant        none
@@ -16,7 +16,7 @@
   const STYLE_ID = 'aaa-market-deal-finder-style';
   const PANEL_ID = 'aaa-market-deal-finder';
 
-  const state = { open: false, scanning: false, results: [] };
+  const state = { open: false, scanning: false, results: [], dragged: false };
 
   const builtInTargets = [
     { id: '180', name: 'Bottle of Beer' },
@@ -37,8 +37,6 @@
       #${PANEL_ID} .aaa-tab{flex:1;color:#ffc247;font-weight:bold;cursor:pointer}
       #${PANEL_ID} .aaa-toggle{border:0;background:transparent;color:#ffc247;font-size:18px;line-height:1;cursor:pointer;padding:0 3px}
       #${PANEL_ID} .aaa-body{padding:10px;max-height:55vh;overflow:auto}
-      #${PANEL_ID}.aaa-maximized{width:min(620px,94vw)!important;max-height:90vh}
-      #${PANEL_ID}.aaa-maximized .aaa-body{max-height:calc(90vh - 48px)}
       #${PANEL_ID}.aaa-closed .aaa-body{display:none}
       #${PANEL_ID} button{background:#ffc247;color:#111;border:0;border-radius:6px;padding:7px 9px;font-weight:bold;cursor:pointer;margin:2px}
       #${PANEL_ID} button.secondary{background:#333;color:#fff;border:1px solid #666}
@@ -63,31 +61,45 @@
   }
 
   function makeDraggable(panel, handle) {
-    let drag = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    let drag = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
     handle.addEventListener('pointerdown', e => {
-      if (e.target.closest('button') || e.target.closest('.aaa-tab')) return;
-      drag = true; handle.setPointerCapture(e.pointerId);
-      const r = panel.getBoundingClientRect(); sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      if (e.target.closest('button')) return;
+      drag = true; moved = false; state.dragged = false;
+      sx = e.clientX; sy = e.clientY;
+      const r = panel.getBoundingClientRect(); ox = r.left; oy = r.top;
       panel.style.right = 'auto'; panel.style.bottom = 'auto';
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
     });
     handle.addEventListener('pointermove', e => {
       if (!drag) return;
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+      moved = true; state.dragged = true; e.preventDefault();
       const x = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, ox + e.clientX - sx));
       const y = Math.max(0, Math.min(window.innerHeight - 40, oy + e.clientY - sy));
       panel.style.left = x + 'px'; panel.style.top = y + 'px';
     });
-    handle.addEventListener('pointerup', () => {
-      if (!drag) return; drag = false;
-      const r = panel.getBoundingClientRect(); savePos(r.left, r.top);
-    });
+    const finish = () => {
+      if (!drag) return;
+      drag = false;
+      if (moved) { const r = panel.getBoundingClientRect(); savePos(r.left, r.top); }
+      if (moved) setTimeout(() => { state.dragged = false; }, 250);
+    };
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
   }
 
   function getCurrentItemId() {
-    const text = location.href + ' ' + document.body.innerText.slice(0, 3000);
-    const m = text.match(/(?:item(?:id)?[=\/ ]|\/items\/)(\d{1,6})/i);
-    if (m) return m[1];
-    const path = location.pathname.match(/(?:item|market)[^\d]*(\d{1,6})/i);
-    return path ? path[1] : null;
+    const candidates = [location.href, location.search, location.hash, location.pathname];
+    for (const value of candidates) {
+      const m = value.match(/(?:item_id|itemid|item|ID|id)[=/:_-](\\d{1,6})/i);
+      if (m) return m[1];
+    }
+    const el = document.querySelector('[data-itemid],[data-item-id],[data-item]');
+    if (el) {
+      const id = el.getAttribute('data-itemid') || el.getAttribute('data-item-id') || el.getAttribute('data-item');
+      if (/^\\d+$/.test(id || '')) return id;
+    }
+    return null;
   }
 
   function getApiKey() {
@@ -110,9 +122,13 @@
       const res = await fetch(`https://api.torn.com/torn/?selections=items&key=${encodeURIComponent(key)}`);
       if (!res.ok) throw new Error('API HTTP ' + res.status);
       const data = await res.json();
-      const collection = data.items;
-      const item = Array.isArray(collection) ? collection.find(x => String(x.id) === String(id)) : collection && (collection[id] || Object.values(collection).find(x => String(x.id) === String(id)));
-      const sell = Number(item && (item.sell_price ?? item.sell ?? item.npc_sell_price));
+      if (data.error) throw new Error(data.error.error || data.error.code || 'Torn API error');
+      const collection = data.items || data;
+      let item = null;
+      if (Array.isArray(collection)) item = collection.find(x => String(x.id ?? x.ID) === String(id));
+      else if (collection && typeof collection === 'object') item = collection[id] || Object.values(collection).find(x => x && String(x.id ?? x.ID) === String(id));
+      const rawSell = item && (item.sell_price ?? item.sellPrice ?? item.sell ?? item.npc_sell_price);
+      const sell = Number(typeof rawSell === 'string' ? rawSell.replace(/[, $]/g, '') : rawSell);
       if (!Number.isFinite(sell) || sell <= 0) return null;
       cache[id] = { sell, time: Date.now() };
       localStorage.setItem(CACHE, JSON.stringify(cache));
@@ -191,13 +207,12 @@
     if (document.getElementById(PANEL_ID)) return;
     addStyle();
     const p = document.createElement('div'); p.id = PANEL_ID;
-    p.innerHTML = `<div class="aaa-head"><div class="aaa-tab" title="Tap to open or close">💰 AAA DEAL FINDER</div><button class="aaa-max" title="Maximise / restore">⛶</button><button class="aaa-toggle" title="Close toolbar">−</button></div><div class="aaa-body"><div class="aaa-status">Ready — open an Item Market or Bazaar listing page.</div><div><button class="aaa-scan">🔎 Scan visible deals</button><button class="secondary aaa-clear">Clear highlights</button></div><h4 style="margin:12px 0 5px;color:#ffc247">🎯 Items to watch</h4><div class="aaa-targets"></div></div>`;
+    p.innerHTML = `<div class="aaa-head"><div class="aaa-tab" title="Tap to open or close">💰 AAA DEAL FINDER</div><button class="aaa-toggle" title="Close toolbar">−</button></div><div class="aaa-body"><div class="aaa-status">Ready — open one item's Item Market/Bazaar listings, then scan. Drag the header to move.</div><div><button class="aaa-scan">🔎 Scan visible deals</button><button class="secondary aaa-clear">Clear highlights</button></div><h4 style="margin:12px 0 5px;color:#ffc247">🎯 Items to watch</h4><div class="aaa-targets"></div></div>`;
     document.body.appendChild(p);
-    const tab = p.querySelector('.aaa-tab'), toggle = p.querySelector('.aaa-toggle'), max = p.querySelector('.aaa-max');
+    const tab = p.querySelector('.aaa-tab'), toggle = p.querySelector('.aaa-toggle');
     const setOpen = open => { state.open = open; p.classList.toggle('aaa-closed', !open); toggle.textContent = open ? '−' : '+'; };
-    tab.addEventListener('click', () => setOpen(!state.open));
+    tab.addEventListener('click', () => { if (state.dragged) return; setOpen(!state.open); });
     toggle.addEventListener('click', () => setOpen(false));
-    max.addEventListener('click', () => p.classList.toggle('aaa-maximized'));
     p.querySelector('.aaa-scan').addEventListener('click', scan);
     p.querySelector('.aaa-clear').addEventListener('click', clearHighlights);
     makeDraggable(p, p.querySelector('.aaa-head'));
