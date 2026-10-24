@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Market Deal Finder
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Torn market/bazaar deal scanner with draggable expandable toolbar, NPC-profit targets, and visible listing highlights.
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,6 +37,8 @@
       #${PANEL_ID} .aaa-tab{flex:1;color:#ffc247;font-weight:bold;cursor:pointer}
       #${PANEL_ID} .aaa-toggle{border:0;background:transparent;color:#ffc247;font-size:18px;line-height:1;cursor:pointer;padding:0 3px}
       #${PANEL_ID} .aaa-body{padding:10px;max-height:55vh;overflow:auto}
+      #${PANEL_ID}.aaa-maximized{width:min(620px,94vw)!important;max-height:90vh}
+      #${PANEL_ID}.aaa-maximized .aaa-body{max-height:calc(90vh - 48px)}
       #${PANEL_ID}.aaa-closed .aaa-body{display:none}
       #${PANEL_ID} button{background:#ffc247;color:#111;border:0;border-radius:6px;padding:7px 9px;font-weight:bold;cursor:pointer;margin:2px}
       #${PANEL_ID} button.secondary{background:#333;color:#fff;border:1px solid #666}
@@ -105,11 +107,12 @@
     const key = getApiKey();
     if (!key) return null;
     try {
-      const res = await fetch(`https://api.torn.com/torn/${encodeURIComponent(id)}?selections=items&key=${encodeURIComponent(key)}`);
+      const res = await fetch(`https://api.torn.com/torn/?selections=items&key=${encodeURIComponent(key)}`);
       if (!res.ok) throw new Error('API HTTP ' + res.status);
       const data = await res.json();
-      const item = data.items && data.items[id];
-      const sell = Number(item && (item.sell_price ?? item.sell ?? item.market_value));
+      const collection = data.items;
+      const item = Array.isArray(collection) ? collection.find(x => String(x.id) === String(id)) : collection && (collection[id] || Object.values(collection).find(x => String(x.id) === String(id)));
+      const sell = Number(item && (item.sell_price ?? item.sell ?? item.npc_sell_price));
       if (!Number.isFinite(sell) || sell <= 0) return null;
       cache[id] = { sell, time: Date.now() };
       localStorage.setItem(CACHE, JSON.stringify(cache));
@@ -152,10 +155,11 @@
     const npc = await getNpcPrice(itemId);
     if (!npc) { status(`Found ${rows.length} listings, but no NPC sell price was returned for item ${itemId}.`); state.scanning = false; return; }
 
-    let dollar = 0, profit = 0;
+    let dollar = 0, profit = 0, priced = 0;
     for (const row of rows) {
       const price = parsePrice(row);
       if (price == null) continue;
+      priced++;
       if (price === 1) { row.classList.add('aaa-dollar-highlight'); addBadge(row, '🚨 $1 DOLLAR DEAL', true); dollar++; }
       if (price < npc) {
         const p = npc - price;
@@ -164,7 +168,7 @@
         state.results.push({ price, profit: p }); profit += p;
       }
     }
-    status(`${state.results.length} NPC-profit match${state.results.length === 1 ? '' : 'es'} • ${dollar} $1 deal${dollar === 1 ? '' : 's'} • NPC sell ${money(npc)}`);
+    status(`${state.results.length} NPC-profit match${state.results.length === 1 ? '' : 'es'} • ${dollar} $1 deal${dollar === 1 ? '' : 's'} • readable prices ${priced}/${rows.length} • NPC sell ${money(npc)}`);
     state.scanning = false;
     renderTargets(itemId, npc);
   }
@@ -187,12 +191,13 @@
     if (document.getElementById(PANEL_ID)) return;
     addStyle();
     const p = document.createElement('div'); p.id = PANEL_ID;
-    p.innerHTML = `<div class="aaa-head"><div class="aaa-tab" title="Click to open/close">💰 AAA DEAL FINDER</div><button class="aaa-toggle" title="Open / close">−</button></div><div class="aaa-body"><div class="aaa-status">Ready — open an Item Market or Bazaar listing page.</div><div><button class="aaa-scan">🔎 Scan visible deals</button><button class="secondary aaa-clear">Clear highlights</button></div><h4 style="margin:12px 0 5px;color:#ffc247">🎯 Items to watch</h4><div class="aaa-targets"></div></div>`;
+    p.innerHTML = `<div class="aaa-head"><div class="aaa-tab" title="Tap to open or close">💰 AAA DEAL FINDER</div><button class="aaa-max" title="Maximise / restore">⛶</button><button class="aaa-toggle" title="Close toolbar">−</button></div><div class="aaa-body"><div class="aaa-status">Ready — open an Item Market or Bazaar listing page.</div><div><button class="aaa-scan">🔎 Scan visible deals</button><button class="secondary aaa-clear">Clear highlights</button></div><h4 style="margin:12px 0 5px;color:#ffc247">🎯 Items to watch</h4><div class="aaa-targets"></div></div>`;
     document.body.appendChild(p);
-    const tab = p.querySelector('.aaa-tab'), toggle = p.querySelector('.aaa-toggle');
+    const tab = p.querySelector('.aaa-tab'), toggle = p.querySelector('.aaa-toggle'), max = p.querySelector('.aaa-max');
     const setOpen = open => { state.open = open; p.classList.toggle('aaa-closed', !open); toggle.textContent = open ? '−' : '+'; };
     tab.addEventListener('click', () => setOpen(!state.open));
-    toggle.addEventListener('click', () => setOpen(!state.open));
+    toggle.addEventListener('click', () => setOpen(false));
+    max.addEventListener('click', () => p.classList.toggle('aaa-maximized'));
     p.querySelector('.aaa-scan').addEventListener('click', scan);
     p.querySelector('.aaa-clear').addEventListener('click', clearHighlights);
     makeDraggable(p, p.querySelector('.aaa-head'));
