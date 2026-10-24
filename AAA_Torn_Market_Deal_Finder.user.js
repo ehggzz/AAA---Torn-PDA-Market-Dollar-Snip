@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAA - Torn Market Deal Finder
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  Torn market/bazaar deal scanner with draggable expandable toolbar, NPC-profit targets, and visible listing highlights.
 // @match        https://www.torn.com/*
 // @grant        none
@@ -32,7 +32,7 @@
     s.id = STYLE_ID;
     s.textContent = `
       #${PANEL_ID}{position:fixed;right:18px;bottom:18px;width:330px;z-index:2147483647;font:13px Arial,sans-serif;color:#fff;background:#1f1f1f;border:1px solid #ffc247;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden}
-      #${PANEL_ID} .aaa-head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#111;border-bottom:1px solid #444;cursor:grab;user-select:none}
+      #${PANEL_ID} .aaa-head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#111;border-bottom:1px solid #444;cursor:move;user-select:none;touch-action:none}
       #${PANEL_ID} .aaa-head:active{cursor:grabbing}
       #${PANEL_ID} .aaa-tab{flex:1;color:#ffc247;font-weight:bold;cursor:pointer}
       #${PANEL_ID} .aaa-toggle{border:0;background:transparent;color:#ffc247;font-size:18px;line-height:1;cursor:pointer;padding:0 3px}
@@ -62,30 +62,58 @@
 
   function makeDraggable(panel, handle) {
     let drag = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
-    handle.addEventListener('pointerdown', e => {
-      if (e.target.closest('button')) return;
+    const begin = (x, y, target, pointerId) => {
+      if (target && target.closest && target.closest('button')) return;
       drag = true; moved = false; state.dragged = false;
-      sx = e.clientX; sy = e.clientY;
+      sx = x; sy = y;
       const r = panel.getBoundingClientRect(); ox = r.left; oy = r.top;
       panel.style.right = 'auto'; panel.style.bottom = 'auto';
-      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
-    });
-    handle.addEventListener('pointermove', e => {
+      if (pointerId !== undefined) { try { handle.setPointerCapture(pointerId); } catch (_) {} }
+    };
+    const move = (x, y, event) => {
       if (!drag) return;
-      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
-      moved = true; state.dragged = true; e.preventDefault();
-      const x = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, ox + e.clientX - sx));
-      const y = Math.max(0, Math.min(window.innerHeight - 40, oy + e.clientY - sy));
-      panel.style.left = x + 'px'; panel.style.top = y + 'px';
-    });
+      if (!moved && Math.hypot(x - sx, y - sy) < 5) return;
+      moved = true; state.dragged = true;
+      if (event && event.cancelable) event.preventDefault();
+      const px = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, ox + x - sx));
+      const py = Math.max(0, Math.min(window.innerHeight - 40, oy + y - sy));
+      panel.style.left = px + 'px'; panel.style.top = py + 'px';
+    };
     const finish = () => {
       if (!drag) return;
       drag = false;
-      if (moved) { const r = panel.getBoundingClientRect(); savePos(r.left, r.top); }
-      if (moved) setTimeout(() => { state.dragged = false; }, 250);
+      if (moved) {
+        const r = panel.getBoundingClientRect();
+        savePos(r.left, r.top);
+        setTimeout(() => { state.dragged = false; }, 300);
+      }
     };
+    // Mouse/stylus and modern pointer support.
+    handle.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch') return; // handled by touch events below for PDA WebViews
+      begin(e.clientX, e.clientY, e.target, e.pointerId);
+    });
+    handle.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') return;
+      move(e.clientX, e.clientY, e);
+    });
     handle.addEventListener('pointerup', finish);
     handle.addEventListener('pointercancel', finish);
+    // Explicit touch fallback for Android/Torn PDA WebViews.
+    handle.addEventListener('touchstart', e => {
+      if (!e.touches || !e.touches.length) return;
+      begin(e.touches[0].clientX, e.touches[0].clientY, e.target);
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!drag || !e.touches || !e.touches.length) return;
+      move(e.touches[0].clientX, e.touches[0].clientY, e);
+    }, { passive: false });
+    document.addEventListener('touchend', finish, { passive: true });
+    document.addEventListener('touchcancel', finish, { passive: true });
+    // Prevent the title's open/close click after a drag.
+    handle.addEventListener('click', e => {
+      if (state.dragged) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
   }
 
   function getCurrentItemId() {
